@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#061A2E">
+  <meta name="description" content="Interfaz de Campo para Efectivos de Serenazgo - Municipalidad de Chorrillos">
+  <title>Serenazgo en Campo — Chorrillos</title>
+
+  <!-- Google Fonts: Montserrat & Roboto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap 5.3 CSS vía CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+  <!-- Estilos compartidos -->
+  <link rel="stylesheet" href="/css/shared.css">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚔</text></svg>">
+
+  <style>
+    /* Estilos específicos para la vista táctil de Serenazgo en campo (Alto Contraste) */
+    .sereno-wrapper {
+      max-width: 520px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: #F8FAFC;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 0 40px rgba(0,0,0,0.1);
+    }
+
+    .sereno-header-bar {
+      background: linear-gradient(135deg, var(--color-primary-dark) 0%, #0D3A66 100%);
+      color: #FFFFFF;
+      padding: 1rem 1.25rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .status-dot-field {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #10B981;
+      border: 2px solid #FFFFFF;
+    }
+    .status-dot-field.ocupado { background: #F59E0B; }
+    .status-dot-field.fuera   { background: #EF4444; }
+
+    /* Pantallas de Navegación */
+    .sereno-screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      padding-bottom: 75px; /* Espacio para bottom bar */
+      animation: fadeIn 0.25s ease-out;
+    }
+    .sereno-screen.active {
+      display: flex;
+    }
+
+    /* Banner de Emergencia Asignada (Alto Contraste para Exteriores) */
+    .emergency-assigned-card {
+      background: #061A2E;
+      color: #FFFFFF;
+      padding: 1.5rem;
+      border-bottom: 4px solid var(--color-accent);
+      box-shadow: 0 8px 25px rgba(6, 26, 46, 0.25);
+    }
+    .emergency-assigned-card.sin-asignacion {
+      background: #0F172A;
+      border-bottom-color: #10B981;
+    }
+
+    .eta-box-field {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: var(--radius-md);
+      padding: 0.65rem 1.25rem;
+      text-align: center;
+    }
+
+    /* Botón Gigante Accesible para Cerrar Ciclo */
+    .btn-giant-action {
+      min-height: 58px;
+      border-radius: var(--radius-md);
+      font-family: var(--font-heading);
+      font-size: 1.05rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      box-shadow: var(--shadow-md);
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .btn-giant-action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Barra Inferior Táctica */
+    .bottom-nav-sereno {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 520px;
+      background: #FFFFFF;
+      border-top: 1px solid var(--color-border);
+      display: flex;
+      z-index: 1000;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .sereno-nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      padding: 0.65rem 0.5rem;
+      border: none;
+      background: transparent;
+      color: var(--color-text-muted);
+      font-family: var(--font-heading);
+      font-size: 0.72rem;
+      font-weight: 700;
+      min-height: 60px;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .sereno-nav-btn.active {
+      color: var(--color-primary-light);
+      background: #EFF6FF;
+    }
+
+    /* Modal Bottom Sheet */
+    .cierre-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 26, 46, 0.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 1055;
+    }
+    .cierre-modal-content {
+      background: #FFFFFF;
+      width: 100%;
+      max-width: 520px;
+      border-radius: 24px 24px 0 0;
+      padding: 1.75rem 1.5rem 2.25rem;
+      box-shadow: var(--shadow-xl);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Selector de rol para evaluación rápida -->
+  <aside class="demo-role-switcher" aria-label="Cambiar rol del sistema">
+    <span class="demo-title">
+      <i class="bi bi-car-front-fill"></i> Serenazgo en Territorio · Chorrillos
+    </span>
+    <nav class="demo-role-links">
+      <a href="/" class="demo-role-link">🏠 Inicio Portal</a>
+      <a href="/ciudadano.html" class="demo-role-link">👤 Reporte Móvil</a>
+      <a href="/dashboard" class="demo-role-link">🖥️ Operador Central</a>
+      <a href="/sereno" class="demo-role-link active" aria-current="page">🚔 Serenazgo Campo</a>
+    </nav>
+  </aside>
+
+  <div class="sereno-wrapper">
+
+    <!-- ══════════════════════════════════════════════════════════
+         LOGIN SERENAZGO EN CAMPO
+         ══════════════════════════════════════════════════════════ -->
+    <section class="sereno-screen active p-4 d-flex align-items-center justify-content-center" id="screen-login-sereno">
+      <div class="card-modern w-100 p-4 text-center">
+        <div class="mb-3">
+          <span class="display-4">🚔</span>
+        </div>
+        <h1 class="h4 fw-bold text-dark mb-1">Serenazgo en Campo</h1>
+        <p class="text-muted small mb-4">Ingreso de Unidades y Patrullas Móviles</p>
+
+        <form id="form-login-sereno" class="text-start">
+          <div class="mb-3">
+            <label for="sereno-usuario" class="form-label fw-bold small text-muted">Código de Agente / Usuario</label>
+            <input type="text" id="sereno-usuario" class="form-control py-2" placeholder="sereno1" value="sereno1" required autocomplete="username">
+          </div>
+          <div class="mb-3">
+            <label for="sereno-password" class="form-label fw-bold small text-muted">Contraseña</label>
+            <input type="password" id="sereno-password" class="form-control py-2" placeholder="••••••••" value="sereno2024" required autocomplete="current-password">
+          </div>
+
+          <div class="alert alert-danger py-2 small hidden" id="sereno-login-error" role="alert">
+            Credenciales de agente no válidas.
+          </div>
+
+          <button type="submit" class="btn btn-touch-primary w-100 py-3 fw-bold mt-2" style="min-height: 48px;">
+            <i class="bi bi-shield-lock-fill me-1"></i> Conectar Unidad al Sistema
+          </button>
+        </form>
+
+        <div class="mt-4 pt-3 border-top small text-muted">
+          Credenciales demo: <code>sereno1</code> / <code>sereno2024</code> (Unidad SR-01)
+        </div>
+      </div>
+    </section>
+
+    <!-- Header Visible Post-Login -->
+    <header class="sereno-header-bar d-flex align-items-center justify-content-between hidden" id="sereno-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="fs-4">🚔</span>
+        <div>
+          <h1 class="h6 mb-0 text-white fw-bold" id="sereno-agente-nombre">Patrulla SR-01</h1>
+          <small class="text-white-50" style="font-size: 0.72rem;">Chorrillos Seguro</small>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2 bg-dark bg-opacity-25 px-3 py-1 rounded-pill border border-light border-opacity-25">
+        <div class="status-dot-field" id="estado-dot"></div>
+        <span class="small fw-bold text-white" id="sereno-estado-texto" style="font-size: 0.78rem;">Disponible</span>
+      </div>
+    </header>
+
+    <!-- Indicador de señal GPS -->
+    <div class="bg-success text-white px-3 py-1 text-center small fw-semibold" id="conexion-indicator">
+      <i class="bi bi-geo-alt-fill me-1"></i> GPS Satelital Conectado
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         PANTALLA 1: MI ASIGNACIÓN ACTUAL (DESPACHO ACTIVO)
+         ══════════════════════════════════════════════════════════ -->
+    <section class="sereno-screen" id="screen-asignacion">
+      
+      <!-- Tarjeta de Emergencia Asignada -->
+      <div class="emergency-assigned-card sin-asignacion" id="asignacion-banner">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="small text-white-50 text-uppercase fw-bold" style="font-size: 0.72rem;">ESTADO OPERATIVO</span>
+          <span class="badge bg-light text-dark rounded-pill px-2 py-1 small fw-bold hidden" id="asignacion-ticket">—</span>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 my-2" id="asignacion-tipo-container">
+          <span class="display-6" id="asignacion-icono">🟢</span>
+          <div>
+            <h2 class="h5 fw-bold text-white mb-0" id="asignacion-title">Sin Asignación Activa</h2>
+            <p class="small text-white-50 mb-0" id="asignacion-desc">En patrullaje preventivo. Esperando alerta de central.</p>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-3 border-top border-secondary border-opacity-25 hidden" id="asignacion-extra">
+          <div class="d-flex align-items-center justify-content-between">
+            <span class="small text-white-50">Tiempo estimado de llegada:</span>
+            <div class="eta-box-field">
+              <span class="h4 fw-bold text-warning mb-0" id="asignacion-eta-val">0</span>
+              <span class="small text-white-50 ms-1">min</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="asignacion-evidencias" class="card-modern mx-3 mt-3 p-3 hidden">
+        <h3 class="h6 fw-bold text-dark mb-2"><i class="bi bi-paperclip me-1"></i>Información del ciudadano</h3>
+        <p id="asignacion-referencia" class="small text-dark mb-2 hidden"></p>
+        <div id="asignacion-foto-container" class="mb-2 hidden">
+          <div class="small fw-semibold text-muted mb-1">Fotografía adjunta</div>
+          <img id="asignacion-foto" class="img-fluid rounded border" alt="Fotografía adjunta al reporte" style="max-height: 220px; width: 100%; object-fit: contain;">
+        </div>
+        <div id="asignacion-audio-referencia-container" class="mb-2 hidden">
+          <label for="asignacion-audio-referencia" class="small fw-semibold text-muted mb-1">Nota de voz de referencia</label>
+          <audio id="asignacion-audio-referencia" controls preload="metadata" class="w-100"></audio>
+        </div>
+        <div id="asignacion-audio-evidencia-container" class="hidden">
+          <label for="asignacion-audio-evidencia" class="small fw-semibold text-muted mb-1">Audio de evidencia</label>
+          <audio id="asignacion-audio-evidencia" controls preload="metadata" class="w-100"></audio>
+        </div>
+      </div>
+
+      <!-- Mapa interactivo de ruta táctica -->
+      <div class="p-3">
+        <div class="card-modern overflow-hidden">
+          <div class="p-2 bg-light border-bottom d-flex align-items-center justify-content-between">
+            <span class="small fw-bold text-muted"><i class="bi bi-compass-fill me-1"></i> Navegación GPS en Vivo</span>
+            <span class="badge bg-primary-subtle text-primary small">Ruta Rápida</span>
+          </div>
+          <div id="mapa-sereno" style="height: 240px;"></div>
+        </div>
+      </div>
+
+      <!-- Botones Tácticos Principales (Touch target gigante) -->
+      <div class="p-3 mt-auto">
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <button class="btn btn-warning w-100 btn-giant-action py-3 text-dark" id="btn-en-camino" disabled aria-label="Notificar a central que voy en camino">
+              <i class="bi bi-car-front-fill fs-5"></i>
+              <span>En Camino</span>
+            </button>
+          </div>
+          <div class="col-6">
+            <button class="btn btn-success w-100 btn-giant-action py-3 text-white" id="btn-atendido" disabled aria-label="Marcar como atendido y registrar cierre">
+              <i class="bi bi-check-circle-fill fs-5"></i>
+              <span>Atendido</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         PANTALLA 2: LISTA DE INCIDENTES EN SECTOR
+         ══════════════════════════════════════════════════════════ -->
+    <section class="sereno-screen p-3" id="screen-lista-sereno">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="h5 fw-bold text-dark mb-0">🚨 Emergencias en Chorrillos</h2>
+        <span class="badge bg-secondary rounded-pill">Sector Activo</span>
+      </div>
+      <div class="d-flex flex-column gap-2" id="sereno-incidents-list">
+        <!-- Generado dinámicamente por JS -->
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════
+         PANTALLA 3: MI PERFIL OPERATIVO
+         ══════════════════════════════════════════════════════════ -->
+    <section class="sereno-screen p-3" id="screen-perfil-sereno">
+      <h2 class="h5 fw-bold text-dark mb-3">👮 Perfil del Efectivo</h2>
+
+      <div class="card-modern p-4 text-center mb-3">
+        <div class="bg-primary-subtle text-primary rounded-circle d-inline-flex align-items-center justify-content-center display-6 mb-2" style="width: 70px; height: 70px;">
+          👮
+        </div>
+        <div class="h5 fw-bold mb-0 text-dark" id="perfil-nombre">—</div>
+        <small class="text-muted" id="perfil-rol">Agente de Serenazgo</small>
+
+        <div class="mt-3 pt-3 border-top text-start">
+          <label for="select-estado-sereno" class="form-label fw-bold small text-muted">Cambiar Estado Operativo</label>
+          <select id="select-estado-sereno" class="form-select py-2">
+            <option value="disponible">🟢 Disponible para despacho</option>
+            <option value="en_servicio">🟡 En intervención activa</option>
+            <option value="fuera_servicio">🔴 Fuera de turno / Pausa</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn btn-outline-danger w-100 py-3 fw-bold rounded-3 mt-auto" id="btn-logout-sereno" style="min-height: 48px;">
+        <i class="bi bi-box-arrow-right me-1"></i> Cerrar Turno / Salir
+      </button>
+    </section>
+
+    <!-- Barra de Navegación Inferior (Mobile First) -->
+    <nav class="bottom-nav-sereno hidden" id="sereno-bottom-nav" aria-label="Navegación de agente">
+      <button class="sereno-nav-btn active" data-screen="screen-asignacion">
+        <i class="bi bi-shield-shaded fs-5"></i>
+        <span>Despacho</span>
+      </button>
+      <button class="sereno-nav-btn" data-screen="screen-lista-sereno">
+        <i class="bi bi-list-task fs-5"></i>
+        <span>Sector</span>
+      </button>
+      <button class="sereno-nav-btn" data-screen="screen-perfil-sereno">
+        <i class="bi bi-person-badge fs-5"></i>
+        <span>Mi Perfil</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       MODAL BOTTOM-SHEET: CIERRE DE ATENCIÓN (RF-07)
+       ══════════════════════════════════════════════════════════ -->
+  <div class="cierre-modal-overlay hidden" id="modal-cierre-sereno" role="dialog" aria-modal="true" aria-labelledby="cierre-sereno-title">
+    <div class="cierre-modal-content">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="h5 fw-bold mb-0 text-dark" id="cierre-sereno-title">Registrar Cierre del Incidente</h3>
+        <button class="btn-close" id="btn-cancelar-cierre-sereno" aria-label="Cerrar"></button>
+      </div>
+
+      <div class="mb-3">
+        <label for="cierre-sereno-estado" class="form-label fw-bold small text-muted">Resultado de la Intervención</label>
+        <select id="cierre-sereno-estado" class="form-select py-2">
+          <option value="atendido">✅ Emergencia Atendida y Controlada</option>
+          <option value="cancelado">❌ Falsa Alarma / No Requiere Intervención</option>
+        </select>
+      </div>
+
+      <div class="mb-4">
+        <label for="cierre-sereno-obs" class="form-label fw-bold small text-muted">Observaciones de Campo</label>
+        <textarea id="cierre-sereno-obs" class="form-control" rows="3" placeholder="Detalle de personas asistidas, comisaría derivada, etc..."></textarea>
+      </div>
+
+      <button class="btn btn-touch-success w-100 py-3 fw-bold" id="btn-confirmar-cierre-sereno" style="min-height: 52px;">
+        <i class="bi bi-check2-all me-1"></i> Finalizar y Volver a Disponible
+      </button>
+    </div>
+  </div>
+
+  <!-- Contenedor Toast -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Leaflet & JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/sereno.js"></script>
+</body>
+</html>

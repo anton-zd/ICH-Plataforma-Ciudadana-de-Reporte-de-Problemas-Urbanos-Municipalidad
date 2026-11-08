@@ -1,0 +1,21 @@
+{
+  "name": "app-serenazgo-chorrillos",
+  "version": "1.0.0",
+  "description": "Sistema Inclusivo de Atención de Serenazgo - Municipalidad de Chorrillos",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
+

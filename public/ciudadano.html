@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#061A2E">
+  <meta name="description" content="Acceso rápido y reporte de emergencias al Serenazgo de Chorrillos.">
+  <title>Reporte Ciudadano — Serenazgo Chorrillos</title>
+
+  <!-- Google Fonts: Montserrat & Roboto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap 5.3 CSS vía CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+  <!-- Estilos compartidos de alto impacto (peru.info) -->
+  <link rel="stylesheet" href="/css/shared.css">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚨</text></svg>">
+
+  <style>
+    /* Estilos complementarios específicos para la vista móvil del Ciudadano */
+    .app-wrapper {
+      max-width: 520px;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.08);
+      position: relative;
+    }
+
+    .header-citizen {
+      background: #0A2540;
+      color: #FFFFFF;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    /* Vistas / Pantallas del flujo de 3 pasos */
+    .screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      padding: 1.5rem 1.25rem 2.5rem;
+      animation: fadeIn 0.25s ease-out;
+    }
+    .screen.active {
+      display: flex;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Paso 1: Catálogo visual de incidentes (Touch target > 48x48px) */
+    .tipo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .tipo-card {
+      background: #FFFFFF;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: var(--transition-smooth);
+      min-height: 165px;
+      justify-content: center;
+      user-select: none;
+    }
+    .tipo-card:hover, .tipo-card:focus-visible {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(10, 37, 64, 0.1);
+      border-color: var(--color-border-dark);
+    }
+    .tipo-card:active {
+      transform: scale(0.97);
+    }
+
+    .tipo-card .tipo-icon {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      margin-bottom: 0.6rem;
+      transition: transform 0.2s ease;
+    }
+    .tipo-card:hover .tipo-icon {
+      transform: scale(1.1);
+    }
+
+    .tipo-card .tipo-name {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--color-primary-dark);
+      margin-bottom: 0.25rem;
+    }
+
+    .tipo-card .tipo-desc {
+      font-size: 0.78rem;
+      color: var(--color-text-muted);
+      line-height: 1.3;
+    }
+
+    .tipo-audio-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 38px;
+      height: 38px;
+      background: #F1F5F9;
+      border: 1px solid var(--color-border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      z-index: 5;
+    }
+    .tipo-audio-btn:hover {
+      background: var(--color-primary-light);
+      color: #fff;
+    }
+
+    .ubicacion-controles {
+      display: grid;
+      gap: 0.65rem;
+      margin: 0 0 1rem;
+    }
+
+    .btn-ubicacion-manual.active {
+      background: #EFF6FF;
+      border-color: var(--color-primary-light);
+      color: var(--color-primary-dark);
+    }
+
+    @keyframes audio-recording-pulse {
+      50% { opacity: 0.65; }
+    }
+
+    #btn-grabar-evidencia.recording {
+      background: #DC2626;
+      border-color: #DC2626;
+      color: #FFFFFF;
+      animation: audio-recording-pulse 1s infinite;
+    }
+
+    .badge-prioridad {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #DC2626;
+      color: #FFFFFF;
+      font-family: var(--font-heading);
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 50px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.4);
+    }
+
+    /* Botón SOS pulsante en Home */
+    .btn-sos {
+      width: 170px;
+      height: 170px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #FF5252, #E53935 65%, #B71C1C);
+      color: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      margin: 1.5rem auto;
+      border: 6px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 10px 35px rgba(229, 57, 53, 0.45);
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      animation: pulse-sos 2.5s infinite;
+      user-select: none;
+    }
+    .btn-sos:hover, .btn-sos:focus-visible {
+      transform: scale(1.05);
+      box-shadow: 0 14px 45px rgba(229, 57, 53, 0.65);
+    }
+    .btn-sos .sos-icon { font-size: 3rem; line-height: 1; }
+    .btn-sos .sos-label { font-family: var(--font-heading); font-size: 0.95rem; font-weight: 800; letter-spacing: 0.04em; }
+
+    @keyframes pulse-sos {
+      0% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.6); }
+      70% { box-shadow: 0 0 0 24px rgba(229, 57, 53, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+    }
+
+    /* Paso 2: Ubicación & Evidencia */
+    .location-box {
+      background: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      border-radius: var(--radius-md);
+      padding: 0.9rem 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #1E3A8A;
+      margin-bottom: 1rem;
+    }
+
+    .recording-indicator {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--color-accent);
+      font-weight: 700;
+      font-size: 0.85rem;
+      animation: blink 1s infinite;
+      margin-top: 0.5rem;
+    }
+    .recording-indicator.active { display: flex; }
+    @keyframes blink { 50% { opacity: 0.4; } }
+
+    /* Paso 3: Confirmación y Pantalla Verde */
+    .screen-success-container {
+      background: linear-gradient(135deg, #065F46 0%, #059669 100%);
+      color: #FFFFFF;
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-lg);
+    }
+    .success-ticket-box {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: var(--radius-md);
+      padding: 0.85rem 1.5rem;
+      display: inline-block;
+      margin: 1rem 0;
+      backdrop-filter: blur(6px);
+    }
+
+    /* Info de patrulla asignada */
+    .patrulla-card {
+      background: var(--color-primary-dark);
+      color: #FFFFFF;
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+      box-shadow: var(--shadow-md);
+    }
+    .patrulla-eta-box {
+      margin-left: auto;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.12);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+    }
+
+    #resumen-icon {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Skip link para accesibilidad (WCAG 2.1 AA) -->
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
+  <!-- Barra de navegación rápida entre roles (Evaluación ágil) -->
+  <aside class="demo-role-switcher" aria-label="Cambiar de rol en el sistema">
+    <span class="demo-title">
+      <i class="bi bi-shield-check"></i> Chorrillos · Serenazgo Inclusivo
+    </span>
+    <nav class="demo-role-links">
+      <a href="/" class="demo-role-link">🏠 Inicio Portal</a>
+      <a href="/ciudadano.html" class="demo-role-link active" aria-current="page">👤 Reporte Móvil</a>
+      <a href="/dashboard" class="demo-role-link">🖥️ Operador Central</a>
+      <a href="/sereno" class="demo-role-link">🚔 Serenazgo Campo</a>
+    </nav>
+  </aside>
+
+  <div class="app-wrapper">
+    <!-- Header Ciudadano con Brand y botón de Seguimiento -->
+    <header class="header-citizen d-flex align-items-center justify-content-between">
+      <a href="/" class="d-flex align-items-center text-white text-decoration-none" title="Volver a la portada">
+        <img src="img/logo-municipalidad.png" alt="Municipalidad de Chorrillos" style="height: 44px; width: auto; object-fit: contain;">
+        <span class="ms-2 fw-semibold">Municipalidad de Chorrillos</span>
+      </a>
+      <button class="btn btn-sm btn-outline-light rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1 hidden" id="btn-ir-seguimiento" style="min-height: 40px;" aria-label="Consultar ticket de seguimiento">
+        <i class="bi bi-clock-history"></i>
+        <span>Seguimiento</span>
+      </button>
+    </header>
+
+    <!-- Indicador de Progreso del Flujo (1 -> 2 -> 3) -->
+    <div class="px-3 pt-3 pb-2 bg-light border-bottom hidden" id="step-indicator" aria-label="Progreso del reporte">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small fw-bold text-muted text-uppercase" style="font-size: 0.7rem;">Progreso del reporte</span>
+        <span class="small fw-bold text-primary" style="font-size: 0.75rem;">≤ 3 toques</span>
+      </div>
+      <div class="d-flex gap-2">
+        <div class="flex-grow-1 rounded-pill bg-success" id="step-1" style="height: 6px;"></div>
+        <div class="flex-grow-1 rounded-pill bg-primary" id="step-2" style="height: 6px;"></div>
+        <div class="flex-grow-1 rounded-pill bg-secondary opacity-25" id="step-3" style="height: 6px;"></div>
+      </div>
+    </div>
+
+    <main id="main-content" class="flex-grow-1 d-flex flex-column">
+
+      <section class="screen active text-center justify-content-center" id="screen-login-ciudadano" aria-labelledby="login-ciudadano-title">
+        <div class="my-auto py-3">
+          <img src="img/logo-municipalidad.png" alt="Municipalidad de Chorrillos" class="mb-3" style="height: 68px; width: auto; object-fit: contain;">
+          <h1 class="h3 fw-bolder text-dark mb-2" id="login-ciudadano-title">Bienvenido a Serenazgo</h1>
+          <p class="text-muted mb-4">Ingresa con tu DNI y PIN para reportar una emergencia.</p>
+
+          <form id="form-login-ciudadano" class="text-start" novalidate>
+            <div class="mb-3">
+              <label for="ciudadano-dni" class="form-label fw-bold">DNI</label>
+              <input id="ciudadano-dni" class="form-control form-control-lg" type="text" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="username" placeholder="8 dígitos" required aria-describedby="ciudadano-dni-ayuda">
+              <div id="ciudadano-dni-ayuda" class="form-text">Escribe los 8 números de tu DNI.</div>
+            </div>
+            <div class="mb-3">
+              <label for="ciudadano-pin" class="form-label fw-bold">PIN</label>
+              <input id="ciudadano-pin" class="form-control form-control-lg" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" placeholder="4 dígitos" required aria-describedby="ciudadano-pin-ayuda">
+              <div id="ciudadano-pin-ayuda" class="form-text">Tu PIN debe tener 4 números.</div>
+            </div>
+            <div id="ciudadano-login-error" class="alert alert-danger py-2 small hidden" role="alert"></div>
+            <button id="btn-login-ciudadano" class="btn btn-touch-primary w-100 py-3 fw-bold" type="submit" style="min-height: 50px;">
+              <i class="bi bi-box-arrow-in-right me-1"></i> Ingresar
+            </button>
+            <button id="btn-registro-ciudadano" class="btn btn-outline-primary w-100 py-3 fw-bold mt-2" type="button" style="min-height: 50px;">
+              <i class="bi bi-person-plus me-1"></i> Crear cuenta rápida
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PANTALLA 0: BIENVENIDA / BOTÓN SOS PRINCIPAL
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen text-center justify-content-center" id="screen-home" aria-labelledby="home-title">
+        <div class="my-auto py-3">
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2 fw-bold text-uppercase mb-3 d-inline-block">
+            <i class="bi bi-geo-alt-fill me-1"></i> Auxilio Inmediato Chorrillos
+          </span>
+
+          <h2 class="display-6 fw-bolder text-dark mb-2" id="home-title">¿Necesitas ayuda?</h2>
+          <p class="text-muted mb-4 px-2">Toca el botón rojo central para iniciar tu reporte de emergencia en menos de 3 toques.</p>
+
+          <!-- Botón SOS Gigante -->
+          <button class="btn-sos" id="btn-pedir-ayuda" aria-label="Pedir Serenazgo de Emergencia ahora">
+            <span class="sos-icon" aria-hidden="true">🚨</span>
+            <span class="sos-label">PEDIR<br>SERENAZGO</span>
+          </button>
+
+          <p class="small text-muted mt-3 mb-4">
+            <i class="bi bi-shield-check text-success me-1"></i> Acceso rápido con DNI y PIN
+          </p>
+
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PASO 1: SELECCIÓN DE INCIDENTE (CATÁLOGO VISUAL + TTS)
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen" id="screen-tipo" aria-labelledby="tipo-heading">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <button class="btn btn-light rounded-circle border" id="btn-volver-tipo" aria-label="Volver al inicio" style="width: 44px; height: 44px;">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <span class="badge bg-primary text-white rounded-pill px-3 py-2 fw-bold">PASO 1 DE 3</span>
+        </div>
+
+        <h2 class="h4 fw-bold text-dark mt-2 mb-1" id="tipo-heading">¿Qué emergencia tienes?</h2>
+        <p class="text-muted small mb-3">Toca la tarjeta que mejor describe la situación. Puedes escuchar la descripción con el botón 🔊.</p>
+
+        <div class="tipo-grid" role="group" aria-label="Tipos de incidente disponibles">
+          <!-- Violencia (Prioridad Alta) -->
+          <div class="tipo-card tipo-violencia" data-tipo="violencia" role="button" tabindex="0" aria-label="Reportar Violencia o Agresión - Prioridad Alta">
+            <span class="badge-prioridad">⚡ Alta</span>
+            <img class="tipo-icon" src="img/icon-violencia.png" alt="">
+            <div class="tipo-name">Violencia</div>
+            <div class="tipo-desc">Pelea, golpes o agresión familiar</div>
+            <button class="tipo-audio-btn" data-audio="violencia" title="Escuchar descripción por voz" aria-label="Escuchar descripción de Violencia">
+              🔊
+            </button>
+          </div>
+
+          <!-- Robo -->
+          <div class="tipo-card tipo-robo" data-tipo="robo" role="button" tabindex="0" aria-label="Reportar Robo o Asalto">
+            <img class="tipo-icon" src="img/icon-robo.png" alt="">
+            <div class="tipo-name">Robo</div>
+            <div class="tipo-desc">Asalto, hurto o robo en curso</div>
+            <button class="tipo-audio-btn" data-audio="robo" title="Escuchar descripción por voz" aria-label="Escuchar descripción de Robo">
+              🔊
+            </button>
+          </div>
+
+          <!-- Accidente -->
+          <div class="tipo-card tipo-accidente" data-tipo="accidente" role="button" tabindex="0" aria-label="Reportar Accidente de Tránsito">
+            <img class="tipo-icon" src="img/icon-accidente.png" alt="">
+            <div class="tipo-name">Accidente</div>
+            <div class="tipo-desc">Choque, atropello o incidente vial</div>
+            <button class="tipo-audio-btn" data-audio="accidente" title="Escuchar descripción por voz" aria-label="Escuchar descripción de Accidente">
+              🔊
+            </button>
+          </div>
+
+          <!-- Auxilio (Prioridad Alta) -->
+          <div class="tipo-card tipo-auxilio" data-tipo="auxilio" role="button" tabindex="0" aria-label="Pedir Auxilio o Urgencia Médica - Prioridad Alta">
+            <span class="badge-prioridad">⚡ Alta</span>
+            <img class="tipo-icon" src="img/icon-auxilio.png" alt="">
+            <div class="tipo-name">Auxilio</div>
+            <div class="tipo-desc">Emergencia médica o persona en peligro</div>
+            <button class="tipo-audio-btn" data-audio="auxilio" title="Escuchar descripción por voz" aria-label="Escuchar descripción de Auxilio">
+              🔊
+            </button>
+          </div>
+
+          <!-- Otras situaciones -->
+          <div class="tipo-card tipo-otros" data-tipo="otros" role="button" tabindex="0" aria-label="Reportar otras situaciones no contempladas">
+            <img class="tipo-icon" src="img/icon-otros.png" alt="">
+            <div class="tipo-name">Otros</div>
+            <div class="tipo-desc">Situaciones no contempladas</div>
+            <button class="tipo-audio-btn" data-audio="otros" title="Escuchar descripción por voz" aria-label="Escuchar descripción de Otros">
+              🔊
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PASO 2: CONFIRMACIÓN DE UBICACIÓN & REFERENCIAS
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen" id="screen-ubicacion" aria-labelledby="ubicacion-heading">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <button class="btn btn-light rounded-circle border" id="btn-volver-ubicacion" aria-label="Volver a seleccionar tipo" style="width: 44px; height: 44px;">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <span class="badge bg-primary text-white rounded-pill px-3 py-2 fw-bold">PASO 2 DE 3</span>
+        </div>
+
+        <h2 class="h4 fw-bold text-dark mt-2 mb-1" id="ubicacion-heading">Confirma tu ubicación</h2>
+        <p class="text-muted small mb-3">Usa el GPS o selecciona un punto en el mapa. Puedes arrastrar el marcador para ajustar la ubicación.</p>
+
+        <div class="ubicacion-controles">
+          <button class="btn btn-touch-primary w-100" id="btn-gps-actual" type="button">
+            <i class="bi bi-crosshair me-1" aria-hidden="true"></i>
+            Usar mi ubicación actual (GPS)
+          </button>
+          <button class="btn btn-touch-outline btn-ubicacion-manual w-100" id="btn-gps-manual" type="button" aria-pressed="false">
+            <i class="bi bi-map me-1" aria-hidden="true"></i>
+            Seleccionar manualmente en el mapa
+          </button>
+        </div>
+
+        <!-- Estado de GPS -->
+        <div class="location-box" id="location-status" role="status" aria-live="polite">
+          <i class="bi bi-geo-alt-fill fs-5 text-primary"></i>
+          <span id="location-text">Puedes usar el GPS o seleccionar un punto en el mapa.</span>
+        </div>
+
+        <!-- Mapa interactivo Leaflet -->
+        <div class="map-responsive mb-3" id="mapa-ciudadano" aria-label="Mapa interactivo con tu ubicación"></div>
+
+        <!-- Referencia complementaria (Voz o Texto) -->
+        <div class="card-modern p-3 mb-4">
+          <label class="form-label fw-bold small text-dark mb-2">¿Alguna referencia cercana? (Opcional)</label>
+          <div class="d-flex gap-2 mb-2" id="botones-referencia-paso2">
+            <button class="btn btn-touch-outline flex-grow-1" id="btn-grabar-voz" type="button"><i class="bi bi-mic-fill text-danger"></i> <span>Grabar Voz</span></button>
+            <button class="btn btn-touch-outline flex-grow-1" id="btn-ref-texto" type="button"><i class="bi bi-pencil-fill text-primary"></i> <span>Escribir</span></button>
+          </div>
+          <div class="recording-indicator" id="recording-indicator-paso2">
+            <i class="bi bi-record-circle-fill fs-5"></i> <span>Grabando audio… Toca nuevamente para finalizar</span>
+          </div>
+          <div id="audio-preview-container-paso2" class="mt-2 hidden text-center">
+            <audio id="audio-preview-paso2" controls class="w-100 mb-2"></audio>
+            <button id="btn-borrar-audio-paso2" type="button" class="btn btn-sm btn-outline-danger w-100"><i class="bi bi-trash"></i> Eliminar grabación</button>
+          </div>
+
+          <div class="mt-2 hidden" id="ref-texto-container">
+            <input type="text" id="ref-texto" class="form-control" placeholder="Ej: Frente al mercado Santa Rosa, poste blanco" aria-label="Texto de referencia de ubicación">
+          </div>
+        </div>
+
+        <div class="mt-auto pt-2">
+          <button class="btn btn-touch-primary w-100 btn-touch-pill py-3 fw-bold" id="btn-continuar-ubicacion" disabled aria-label="Continuar a confirmación de reporte">
+            <span>Continuar al Resumen</span>
+            <i class="bi bi-arrow-right"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PASO 3: RESUMEN Y ENVÍO DEL REPORTE
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen" id="screen-resumen" aria-labelledby="resumen-heading">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <button class="btn btn-light rounded-circle border" id="btn-volver-resumen" aria-label="Volver a ubicación" style="width: 44px; height: 44px;">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <span class="badge bg-danger text-white rounded-pill px-3 py-2 fw-bold">PASO 3 DE 3</span>
+        </div>
+
+        <h2 class="h4 fw-bold text-dark mt-2 mb-1" id="resumen-heading">Revisar y despachar</h2>
+        <p class="text-muted small mb-3">Revisa los datos de la emergencia antes de alertar a las unidades en patrulla.</p>
+
+        <!-- Tarjeta de Resumen -->
+        <div class="card-modern p-3 mb-3 border-start border-4 border-danger">
+          <div class="d-flex align-items-center gap-3">
+            <img id="resumen-icon" src="img/icon-auxilio.png" alt="Auxilio">
+            <div>
+              <div class="h5 fw-bold text-dark mb-1" id="resumen-tipo-nombre">—</div>
+              <div class="small text-muted" id="resumen-ubicacion-txt">📍 Coordenadas listas</div>
+              <div class="small text-primary fw-semibold" id="resumen-ref-txt"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Evidencia complementaria (Foto / Audio) -->
+        <div class="card-modern p-3 mb-3">
+          <label class="form-label fw-bold small text-dark mb-2">Evidencia fotográfica (Opcional)</label>
+          
+          <label class="btn btn-outline-secondary w-100 py-3 mb-2 d-flex align-items-center justify-content-center gap-2 rounded-3" for="evidencia-foto" style="cursor: pointer; min-height: 48px;">
+            <i class="bi bi-camera-fill text-primary fs-5"></i>
+            <span id="foto-label-text" class="fw-semibold small">Tomar o adjuntar foto</span>
+            <input type="file" id="evidencia-foto" accept="image/*" capture="environment" class="d-none" aria-label="Adjuntar foto de la emergencia">
+          </label>
+          <button class="btn btn-outline-secondary w-100 py-2 d-flex align-items-center justify-content-center gap-2 rounded-3" id="btn-grabar-evidencia" type="button" style="min-height: 48px;">
+            <i class="bi bi-soundwave text-danger fs-5"></i>
+            <span class="fw-semibold small">Grabar audio de lo ocurrido</span>
+          </button>
+          <div id="audio-preview-container" class="mt-2 hidden text-center">
+            <audio id="audio-preview" controls class="w-100 mb-2"></audio>
+            <button id="btn-borrar-audio" class="btn btn-sm btn-outline-danger w-100" type="button">
+              <i class="bi bi-trash"></i> Eliminar grabación
+            </button>
+          </div>
+          <img id="preview-foto" alt="Vista previa de foto" class="img-fluid rounded mb-2 d-none" style="max-height: 140px; object-fit: cover;">
+
+        </div>
+
+        <!-- Aviso de Privacidad y Anonimato (RN-03) -->
+        <div class="p-3 rounded-3 bg-light border mb-4 text-center">
+          <small class="text-muted d-block">
+            <i class="bi bi-lock-fill text-success me-1"></i>
+            <strong>Atención Segura y Anónima:</strong> No solicitamos tu DNI, nombre ni datos personales para activar la alerta.
+          </small>
+        </div>
+
+        <div class="mt-auto">
+          <button class="btn btn-touch-danger w-100 btn-touch-pill py-3 fw-bold fs-5 shadow-lg" id="btn-enviar-reporte" aria-label="Enviar reporte de emergencia al Serenazgo">
+            <i class="bi bi-shield-fill-exclamation me-1"></i>
+            <span>🚨 ENVIAR REPORTE</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           PANTALLA DE CONFIRMACIÓN / ÉXITO (FEEDBACK INMEDIATO)
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen text-center justify-content-center" id="screen-success" aria-labelledby="success-heading" aria-live="assertive">
+        <div class="screen-success-container my-auto">
+          <div class="display-1 mb-2" aria-hidden="true">✅</div>
+          <h2 class="h2 fw-bold text-white mb-2" id="success-heading">¡Serenazgo en camino!</h2>
+          <p class="text-white-50 mb-3">Tu solicitud ha sido recibida en la Central de Monitoreo.</p>
+
+          <div class="success-ticket-box">
+            <div class="small text-white-50 text-uppercase fw-bold" style="font-size: 0.7rem;">Código de Incidente</div>
+            <div class="h3 fw-bold text-white mb-0" id="ticket-numero">—</div>
+          </div>
+
+          <div class="d-flex flex-column gap-2 mt-3">
+            <button class="btn btn-light btn-lg fw-bold rounded-pill py-3 text-success" id="btn-ver-seguimiento" style="min-height: 48px;">
+              <i class="bi bi-broadcast me-1"></i> Ver Estado en Vivo
+            </button>
+            <button class="btn btn-outline-light rounded-pill py-2" id="btn-nuevo-reporte" style="min-height: 44px;">
+              Hacer otro reporte
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════
+           SEGUIMIENTO EN VIVO (TIMELINE RF-04 + UNIDAD ASIGNADA)
+           ══════════════════════════════════════════════════════ -->
+      <section class="screen" id="screen-seguimiento" aria-labelledby="seguimiento-heading">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <button class="btn btn-light rounded-circle border" id="btn-volver-seguimiento" aria-label="Volver a inicio" style="width: 44px; height: 44px;">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <span class="badge bg-secondary text-white rounded-pill px-3 py-2 fw-bold">SEGUIMIENTO EN VIVO</span>
+        </div>
+
+        <h2 class="h4 fw-bold text-dark mb-1" id="seguimiento-heading">Estado de tu solicitud</h2>
+        <p class="text-muted small mb-3">Consulta el avance de tu reporte en tiempo real.</p>
+
+        <!-- Buscador de Ticket -->
+        <form id="form-buscar-ticket" class="d-flex gap-2 mb-4" aria-label="Buscar estado por ticket">
+          <input type="text" id="input-ticket" class="form-control" placeholder="Ingresa código (ej: INC-2026-00001)" aria-label="Número de ticket">
+          <button type="submit" class="btn btn-touch-primary px-4" aria-label="Buscar ticket">
+            <i class="bi bi-search"></i>
+          </button>
+        </form>
+
+        <div id="seguimiento-panel">
+          <!-- Línea de tiempo visual (Recibido -> Asignado -> En camino -> Atendido) -->
+          <div class="card-modern mb-3">
+            <div class="card-modern-header">
+              <span>Etapa actual:</span>
+              <span class="badge-status badge-recibido" id="badge-estado">RECIBIDO</span>
+            </div>
+            <div class="card-modern-body pt-2 pb-3">
+              <div class="timeline-stepper" role="list">
+                <div class="timeline-step-item done" data-estado="recibido" role="listitem">
+                  <div class="timeline-dot" aria-hidden="true"><i class="bi bi-inbox-fill"></i></div>
+                  <div class="timeline-step-label">Recibido</div>
+                </div>
+                <div class="timeline-step-item" data-estado="asignado" role="listitem">
+                  <div class="timeline-dot" aria-hidden="true"><i class="bi bi-person-check-fill"></i></div>
+                  <div class="timeline-step-label">Asignado</div>
+                </div>
+                <div class="timeline-step-item" data-estado="en_camino" role="listitem">
+                  <div class="timeline-dot" aria-hidden="true"><i class="bi bi-car-front-fill"></i></div>
+                  <div class="timeline-step-label">En camino</div>
+                </div>
+                <div class="timeline-step-item" data-estado="atendido" role="listitem">
+                  <div class="timeline-dot" aria-hidden="true"><i class="bi bi-check-lg"></i></div>
+                  <div class="timeline-step-label">Atendido</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Datos de la patrulla asignada (RF-05) -->
+          <div class="patrulla-card hidden" id="info-unidad-panel" aria-label="Información de la unidad de auxilio">
+            <div class="fs-1" aria-hidden="true">🚔</div>
+            <div>
+              <div class="small text-white-50 text-uppercase fw-bold" style="font-size: 0.68rem;">Unidad Asignada</div>
+              <div class="h5 fw-bold mb-0 text-white" id="unidad-nombre">—</div>
+              <div class="small text-white-50" id="unidad-codigo">—</div>
+            </div>
+            <div class="patrulla-eta-box">
+              <div class="h3 fw-bold text-warning mb-0" id="eta-valor">—</div>
+              <div class="small text-white-50" style="font-size: 0.68rem;">min aprox.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Contenedor Toast para Avisos Accesibles -->
+  <div class="toast-container" id="toast-container" role="region" aria-live="assertive" aria-label="Notificaciones del sistema"></div>
+
+  <!-- Leaflet JS y Scripts Lógicos -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/ciudadano.js"></script>
+</body>
+</html>

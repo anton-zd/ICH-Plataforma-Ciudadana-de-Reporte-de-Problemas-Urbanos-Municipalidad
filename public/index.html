@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#061A2E">
+  <meta name="description" content="Sistema Inclusivo de Atención de Serenazgo - Municipalidad de Chorrillos. Respuesta rápida de emergencias sin barreras digitales.">
+  <meta name="author" content="Municipalidad de Chorrillos">
+  <title>Serenazgo Chorrillos — Sistema Inclusivo de Atención de Emergencias</title>
+
+  <!-- Google Fonts: Montserrat (Titulares modernos) & Roboto (Lectura limpia) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap 5.3 CSS vía CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+  <!-- Bootstrap Icons vía CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+
+  <style>
+    /* ══════════════════════════════════════════════════════════
+       VARIABLES & DESIGN TOKENS (Inspiración: peru.info)
+       Limpio, moderno, alto contraste, tipografía editorial
+       ══════════════════════════════════════════════════════════ */
+    :root {
+      --color-primary: #0A2540;       /* Azul marino institucional profundo */
+      --color-primary-dark: #061A2E;
+      --color-primary-light: #1565C0;
+      --color-accent: #E53935;        /* Rojo emergencia vibrante */
+      --color-accent-hover: #C62828;
+      --color-gold: #F59E0B;          /* Acento cálido Chorrillos */
+      --color-text-dark: #1E293B;
+      --color-text-muted: #64748B;
+      --color-bg-light: #F8FAFC;
+      --color-card-border: #E2E8F0;
+      --font-heading: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+      --transition-smooth: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--color-text-dark);
+      background-color: #FFFFFF;
+      line-height: 1.65;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    /* ─── Skip Link Accesible (WCAG 2.1 AA) ──────────────────── */
+    .skip-link {
+      position: absolute;
+      top: -100px;
+      left: 1rem;
+      background: var(--color-accent);
+      color: #fff;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      z-index: 10000;
+      text-decoration: none;
+      transition: top 0.2s ease;
+    }
+    .skip-link:focus { top: 1rem; outline: 3px solid #fff; }
+
+    /* ─── Barra de Navegación (Transparente -> Sólida) ──────── */
+    .navbar-custom {
+      padding: 1.1rem 0;
+      transition: var(--transition-smooth);
+      background: transparent;
+      z-index: 1050;
+    }
+
+    .navbar-custom.navbar-scrolled {
+      background: rgba(6, 26, 46, 0.96) !important;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 0.65rem 0;
+      box-shadow: 0 4px 25px rgba(0, 0, 0, 0.25);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .navbar-brand-img {
+      height: 48px;
+      width: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      transition: transform 0.2s ease;
+    }
+    .navbar-brand:hover .navbar-brand-img {
+      transform: scale(1.03);
+    }
+
+    .nav-link-custom {
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: rgba(255, 255, 255, 0.88) !important;
+      padding: 0.5rem 1rem !important;
+      position: relative;
+      transition: color 0.2s ease;
+      letter-spacing: 0.02em;
+    }
+    .nav-link-custom:hover,
+    .nav-link-custom:focus {
+      color: #FFFFFF !important;
+    }
+    .nav-link-custom::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 1rem;
+      right: 1rem;
+      height: 2px;
+      background: var(--color-gold);
+      transform: scaleX(0);
+      transition: transform 0.25s ease;
+    }
+    .nav-link-custom:hover::after,
+    .nav-link-custom.active::after {
+      transform: scaleX(1);
+    }
+
+    /* Botón de acceso rápido en Navbar */
+    .btn-nav-emergency {
+      background: var(--color-accent);
+      color: #fff !important;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 0.88rem;
+      padding: 0.6rem 1.25rem;
+      border-radius: 50px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      min-height: 48px; /* WCAG Target */
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: var(--transition-smooth);
+      box-shadow: 0 4px 15px rgba(229, 57, 53, 0.35);
+      text-decoration: none;
+    }
+    .btn-nav-emergency:hover {
+      background: var(--color-accent-hover);
+      color: #fff !important;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(229, 57, 53, 0.55);
+    }
+
+    /* ─── Hero Section (Pantalla Completa + Overlay Oscuro) ──── */
+    .hero-section {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: url('img/hero-bg.jpg') no-repeat center center;
+      background-size: cover;
+      background-attachment: fixed;
+      color: #FFFFFF;
+      padding: 7rem 0 5rem;
+    }
+
+    /* Superposición oscura gradual para garantizar WCAG AAA de contraste */
+    .hero-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        180deg,
+        rgba(6, 26, 46, 0.85) 0%,
+        rgba(10, 37, 64, 0.78) 45%,
+        rgba(6, 26, 46, 0.95) 100%
+      );
+      z-index: 1;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      backdrop-filter: blur(8px);
+      padding: 0.4rem 1.2rem;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #E2E8F0;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-badge .badge-dot {
+      width: 8px;
+      height: 8px;
+      background: #10B981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+      animation: pulse-dot 2s infinite;
+    }
+
+    @keyframes pulse-dot {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .hero-title {
+      font-size: clamp(2.4rem, 5.5vw, 4.2rem);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 1.25rem;
+      color: #FFFFFF;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .hero-title .highlight {
+      background: linear-gradient(135deg, #FF6B6B 0%, #F59E0B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-lead {
+      font-size: clamp(1.1rem, 2vw, 1.35rem);
+      font-weight: 400;
+      color: #E2E8F0;
+      max-width: 780px;
+      margin: 0 auto 2.5rem;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Botón Gigante Accesible (Área mínima táctil > 48x48px) */
+    .btn-cta-hero {
+      background: linear-gradient(135deg, #FF3D3D 0%, #D32F2F 100%);
+      color: #FFFFFF !important;
+      font-family: var(--font-heading);
+      font-size: 1.15rem;
+      font-weight: 800;
+      padding: 1.1rem 2.8rem;
+      border-radius: 60px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      min-height: 58px;
+      min-width: 260px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      box-shadow: 0 10px 30px rgba(229, 57, 53, 0.45);
+      transition: var(--transition-smooth);
+      letter-spacing: 0.02em;
+    }
+    .btn-cta-hero:hover,
+    .btn-cta-hero:focus-visible {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 16px 40px rgba(229, 57, 53, 0.65);
+      border-color: #FFFFFF;
+      outline: none;
+    }
+    .btn-cta-hero:active {
+      transform: translateY(-1px) scale(0.99);
+    }
+
+    .btn-cta-secondary {
+      background: rgba(255, 255, 255, 0.12);
+      color: #FFFFFF !important;
+      font-family: var(--font-heading);
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 1.1rem 2.2rem;
+      border-radius: 60px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      min-height: 58px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      backdrop-filter: blur(8px);
+      transition: var(--transition-smooth);
+    }
+    .btn-cta-secondary:hover {
+      background: rgba(255, 255, 255, 0.25);
+      border-color: #FFFFFF;
+      transform: translateY(-3px);
+    }
+
+    /* Badges de métricas en Hero */
+    .hero-stats {
+      margin-top: 3.5rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.18);
+    }
+    .hero-stat-item {
+      text-align: center;
+      padding: 0.5rem 1rem;
+    }
+    .hero-stat-number {
+      font-family: var(--font-heading);
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #FFFFFF;
+      line-height: 1;
+      margin-bottom: 0.35rem;
+    }
+    .hero-stat-label {
+      font-size: 0.85rem;
+      color: #CBD5E1;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── Secciones Comunes ─────────────────────────────────── */
+    .section-padding {
+      padding: 6rem 0;
+    }
+    .section-header {
+      margin-bottom: 4rem;
+    }
+    .section-eyebrow {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.88rem;
+      color: var(--color-primary-light);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.75rem;
+      display: inline-block;
+    }
+    .section-title {
+      font-size: clamp(2rem, 3.5vw, 2.75rem);
+      font-weight: 800;
+      color: var(--color-primary-dark);
+      margin-bottom: 1.25rem;
+      line-height: 1.2;
+    }
+    .section-subtitle {
+      font-size: 1.15rem;
+      color: var(--color-text-muted);
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* ─── 3. Usuarios Beneficiarios (Cards Bootstrap) ──────── */
+    .beneficiary-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--color-card-border);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+      transition: var(--transition-smooth);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .beneficiary-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 45px rgba(10, 37, 64, 0.12);
+      border-color: #CBD5E1;
+    }
+    .beneficiary-img-wrapper {
+      position: relative;
+      height: 230px;
+      overflow: hidden;
+    }
+    .beneficiary-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.6s ease;
+    }
+    .beneficiary-card:hover .beneficiary-img {
+      transform: scale(1.06);
+    }
+    .beneficiary-badge {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background: var(--color-primary-dark);
+      color: #FFFFFF;
+      font-family: var(--font-heading);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.35rem 0.85rem;
+      border-radius: 50px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    .beneficiary-card-body {
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+    .beneficiary-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--color-primary-dark);
+      margin-bottom: 0.75rem;
+    }
+    .beneficiary-desc {
+      font-size: 0.98rem;
+      color: var(--color-text-muted);
+      margin-bottom: 1.5rem;
+      flex-grow: 1;
+    }
+    .beneficiary-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1.5rem 0;
+    }
+    .beneficiary-features li {
+      font-size: 0.9rem;
+      color: var(--color-text-dark);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .beneficiary-features li i {
+      color: #10B981;
+      font-size: 1.05rem;
+    }
+    .btn-beneficiary {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 12px;
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      transition: var(--transition-smooth);
+    }
+
+    /* ─── 4. Principales Servicios (Catálogo Visual) ───────── */
+    .services-section {
+      background: var(--color-bg-light);
+      position: relative;
+    }
+    .service-card {
+      background: #FFFFFF;
+      border-radius: 20px;
+      padding: 2.25rem 1.75rem;
+      border: 2px solid transparent;
+      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.04);
+      transition: var(--transition-smooth);
+      height: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+    .service-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.1);
+      color: inherit;
+    }
+
+    /* Bordes temáticos por criticidad */
+    .service-card.card-violencia:hover { border-color: #B71C1C; }
+    .service-card.card-robo:hover { border-color: #E65100; }
+    .service-card.card-accidente:hover { border-color: #0A3D6B; }
+    .service-card.card-auxilio:hover { border-color: #1B5E20; }
+
+    .service-icon-box {
+      width: 90px;
+      height: 90px;
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+      transition: transform 0.3s ease;
+    }
+    .service-card:hover .service-icon-box {
+      transform: scale(1.1);
+    }
+    .service-icon-img {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+    }
+
+    .icon-box-violencia { background: #FFEBEE; }
+    .icon-box-robo { background: #FFF3E0; }
+    .icon-box-accidente { background: #E3F2FD; }
+    .icon-box-auxilio { background: #E8F5E9; }
+
+    .service-title {
+      font-size: 1.28rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: var(--color-primary-dark);
+    }
+    .service-desc {
+      font-size: 0.92rem;
+      color: var(--color-text-muted);
+      margin-bottom: 1.25rem;
+      flex-grow: 1;
+    }
+    .service-priority-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 50px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .priority-high {
+      background: #FEE2E2;
+      color: #991B1B;
+    }
+    .priority-normal {
+      background: #E0F2FE;
+      color: #075985;
+    }
+
+    /* ─── Banner Inclusivo / Accesibilidad ─────────────────── */
+    .accessibility-banner {
+      background: linear-gradient(135deg, #061A2E 0%, #0A2540 100%);
+      color: #FFFFFF;
+      border-radius: 24px;
+      padding: 3.5rem;
+      box-shadow: 0 15px 40px rgba(6, 26, 46, 0.2);
+    }
+    .feature-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 1rem 1.25rem;
+      backdrop-filter: blur(6px);
+      margin-bottom: 1rem;
+    }
+    .feature-pill i {
+      font-size: 1.5rem;
+      color: var(--color-gold);
+    }
+
+    /* ─── 5. Footer Institucional ───────────────────────────── */
+    .footer-custom {
+      background: #04101D;
+      color: #94A3B8;
+      padding: 5rem 0 2rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .footer-logo {
+      height: 52px;
+      width: auto;
+      object-fit: contain;
+      margin-bottom: 1.5rem;
+    }
+    .footer-heading {
+      font-family: var(--font-heading);
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.02em;
+    }
+    .footer-links {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .footer-links li {
+      margin-bottom: 0.75rem;
+    }
+    .footer-links a {
+      color: #94A3B8;
+      text-decoration: none;
+      transition: color 0.2s ease;
+      font-size: 0.95rem;
+    }
+    .footer-links a:hover {
+      color: #FFFFFF;
+    }
+    .emergency-hotline {
+      background: rgba(229, 57, 53, 0.12);
+      border: 1px solid rgba(229, 57, 53, 0.35);
+      border-radius: 16px;
+      padding: 1.25rem;
+      margin-top: 1rem;
+    }
+    .emergency-hotline .number {
+      font-family: var(--font-heading);
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #FF5252;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+    }
+    .footer-bottom {
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.88rem;
+      text-align: center;
+    }
+
+    /* Botón flotante para subir */
+    .btn-back-to-top {
+      position: fixed;
+      bottom: 25px;
+      right: 25px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--color-primary-dark);
+      color: #fff;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      cursor: pointer;
+      opacity: 0;
+      visibility: hidden;
+      transition: var(--transition-smooth);
+      z-index: 999;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .btn-back-to-top.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    .btn-back-to-top:hover {
+      background: var(--color-primary-light);
+      transform: translateY(-3px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Skip-link para lectores de pantalla (Accesibilidad WCAG 2.1 AA) -->
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
+  <!-- ════════════════════════════════════════════════════════
+       1. NAVEGACIÓN (NAVBAR FIJA CON SCROLL DINÁMICO)
+       ════════════════════════════════════════════════════════ -->
+  <nav class="navbar navbar-expand-lg fixed-top navbar-custom" id="mainNavbar" aria-label="Navegación principal">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#inicio" aria-label="Municipalidad de Chorrillos - Inicio">
+        <img src="img/logo-municipalidad.png" alt="Logo de la Municipalidad de Chorrillos" class="navbar-brand-img">
+      </a>
+
+      <!-- Botón hamburguesa accesible para móviles -->
+      <button class="navbar-toggler border-0 text-white p-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Abrir menú de navegación">
+        <i class="bi bi-list fs-1"></i>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarContent">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-1 mb-3 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link nav-link-custom" href="#inicio">Inicio</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link nav-link-custom" href="#beneficiarios">Usuarios</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link nav-link-custom" href="#servicios">Servicios</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link nav-link-custom" href="#accesibilidad">Inclusión</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link nav-link-custom" href="#contacto">Contacto</a>
+          </li>
+          <li class="nav-item ms-lg-2">
+            <a href="/dashboard" class="btn btn-outline-light btn-sm px-3 rounded-pill fw-semibold d-inline-flex align-items-center gap-1" style="min-height: 44px;">
+              <i class="bi bi-shield-lock"></i> Central
+            </a>
+          </li>
+          <li class="nav-item ms-lg-2">
+            <a href="ciudadano.html" class="btn-nav-emergency" aria-label="Reportar emergencia al Serenazgo">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              <span>PEDIR SERENAZGO</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main-content">
+    <!-- ════════════════════════════════════════════════════════
+         2. HERO SECTION (IMPACTO VISUAL + OVERLAY OSCURO)
+         ════════════════════════════════════════════════════════ -->
+    <header class="hero-section text-center" id="inicio">
+      <div class="hero-overlay"></div>
+      <div class="container hero-content">
+        <div class="row justify-content-center">
+          <div class="col-12 col-xl-10">
+
+            <div class="hero-badge">
+              <span class="badge-dot" aria-hidden="true"></span>
+              <span>Atención 24/7 · Chorrillos Seguro e Inclusivo</span>
+            </div>
+
+            <h1 class="hero-title">
+              Sistema Inclusivo de <br class="d-none d-md-block">
+              <span class="highlight">Atención de Serenazgo</span>
+            </h1>
+
+            <p class="hero-lead">
+              Eliminamos barreras de alfabetización digital y reducimos al mínimo el tiempo de despacho. 
+              Reporta cualquier emergencia en <strong>menos de 3 toques</strong>, con geolocalización automática 
+              por GPS, notas de voz y sin necesidad de registros obligatorios.
+            </p>
+
+            <!-- Botón CTA Gigante y Accesible (mínimo 48x48px) -->
+            <div class="d-flex flex-column flex-sm-row justify-content-center align-items-center gap-3">
+              <a href="ciudadano.html" class="btn-cta-hero" role="button" aria-label="Reportar emergencia ahora - Apertura inmediata de formulario móvil">
+                <i class="bi bi-shield-fill-exclamation fs-4" aria-hidden="true"></i>
+                <span>Reportar Emergencia Ahora</span>
+              </a>
+              <a href="#servicios" class="btn-cta-secondary" role="button">
+                <i class="bi bi-grid-fill" aria-hidden="true"></i>
+                <span>Ver Servicios de Auxilio</span>
+              </a>
+            </div>
+
+            <!-- Métricas destacadas -->
+            <div class="hero-stats">
+              <div class="row g-4 justify-content-center">
+                <div class="col-6 col-md-3">
+                  <div class="hero-stat-item">
+                    <div class="hero-stat-number">≤ 3</div>
+                    <div class="hero-stat-label">Toques para pedir auxilio</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="hero-stat-item">
+                    <div class="hero-stat-number">100%</div>
+                    <div class="hero-stat-label">Anónimo y sin registro</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="hero-stat-item">
+                    <div class="hero-stat-number">GPS</div>
+                    <div class="hero-stat-label">Despacho más cercano</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="hero-stat-item">
+                    <div class="hero-stat-number">WCAG</div>
+                    <div class="hero-stat-label">Accesibilidad Nivel AA</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ════════════════════════════════════════════════════════
+         3. USUARIOS BENEFICIARIOS (CARDS BOOTSTRAP)
+         ════════════════════════════════════════════════════════ -->
+    <section class="section-padding" id="beneficiarios">
+      <div class="container">
+        <div class="text-center section-header">
+          <span class="section-eyebrow">Solución Integral</span>
+          <h2 class="section-title">Diseñado para Toda la Comunidad</h2>
+          <p class="section-subtitle">
+            Una plataforma coordinada en tiempo real que articula al vecino que necesita auxilio, 
+            la central de monitoreo y los agentes que patrullan las calles.
+          </p>
+        </div>
+
+        <div class="row g-4">
+          <!-- Tarjeta 1: Ciudadano -->
+          <div class="col-12 col-md-4">
+            <article class="beneficiary-card">
+              <div class="beneficiary-img-wrapper">
+                <img src="img/img-ciudadano.jpg" alt="Vecino de Chorrillos utilizando el aplicativo móvil de serenazgo" class="beneficiary-img" loading="lazy">
+                <span class="beneficiary-badge">Público General</span>
+              </div>
+              <div class="beneficiary-card-body">
+                <h3 class="beneficiary-title">1. Vecino / Ciudadano</h3>
+                <p class="beneficiary-desc">
+                  Interfaz móvil prioritaria y ultra-ligera para sectores vulnerables, adultos mayores y personas con discapacidad visual o auditiva.
+                </p>
+                <ul class="beneficiary-features">
+                  <li><i class="bi bi-check-circle-fill"></i> Botón SOS táctil prominente</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Reproductor de audio descriptivo (TTS)</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Seguimiento en vivo con ETA</li>
+                </ul>
+                <a href="ciudadano.html" class="btn btn-primary btn-beneficiary mt-auto">
+                  <i class="bi bi-phone"></i> Ver Interfaz Ciudadano
+                </a>
+              </div>
+            </article>
+          </div>
+
+          <!-- Tarjeta 2: Operador Central -->
+          <div class="col-12 col-md-4">
+            <article class="beneficiary-card">
+              <div class="beneficiary-img-wrapper">
+                <img src="img/img-operador.jpg" alt="Personal de la Central de Serenazgo monitoreando incidentes en pantallas" class="beneficiary-img" loading="lazy">
+                <span class="beneficiary-badge">Mando y Control</span>
+              </div>
+              <div class="beneficiary-card-body">
+                <h3 class="beneficiary-title">2. Operador de Central</h3>
+                <p class="beneficiary-desc">
+                  Dashboard web de escritorio para gestión masiva. Ordena incidentes automáticamente por criticidad y sugiere la unidad más cercana.
+                </p>
+                <ul class="beneficiary-features">
+                  <li><i class="bi bi-check-circle-fill"></i> Cola priorizada (Violencia / Auxilio)</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Despacho en 1 solo clic</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Mapa geoespacial de patrullas</li>
+                </ul>
+                <a href="/dashboard" class="btn btn-outline-primary btn-beneficiary mt-auto">
+                  <i class="bi bi-display"></i> Abrir Dashboard Central
+                </a>
+              </div>
+            </article>
+          </div>
+
+          <!-- Tarjeta 3: Serenazgo en Campo -->
+          <div class="col-12 col-md-4">
+            <article class="beneficiary-card">
+              <div class="beneficiary-img-wrapper">
+                <img src="img/img-sereno.jpg" alt="Efectivo de Serenazgo de Chorrillos en patrulla móvil" class="beneficiary-img" loading="lazy">
+                <span class="beneficiary-badge">En Territorio</span>
+              </div>
+              <div class="beneficiary-card-body">
+                <h3 class="beneficiary-title">3. Agente en Campo</h3>
+                <p class="beneficiary-desc">
+                  Interfaz móvil táctil para patrulleros y motorizados. Recibe la alerta con coordenadas exactas, referencias sonoras y ruta más rápida.
+                </p>
+                <ul class="beneficiary-features">
+                  <li><i class="bi bi-check-circle-fill"></i> Notificación acústica de despacho</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Botón de cambio de estado "En camino"</li>
+                  <li><i class="bi bi-check-circle-fill"></i> Cierre de incidente con observaciones</li>
+                </ul>
+                <a href="/sereno" class="btn btn-outline-primary btn-beneficiary mt-auto">
+                  <i class="bi bi-shield-check"></i> Interfaz Agente Campo
+                </a>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════
+         4. PRINCIPALES SERVICIOS (CATÁLOGO VISUAL DE INCIDENTES)
+         ════════════════════════════════════════════════════════ -->
+    <section class="section-padding services-section" id="servicios">
+      <div class="container">
+        <div class="text-center section-header">
+          <span class="section-eyebrow">Catálogo de Asistencia Inmediata</span>
+          <h2 class="section-title">¿Qué Emergencia Deseas Reportar?</h2>
+          <p class="section-subtitle">
+            Selección visual con iconos comprensibles de alta legibilidad y síntesis de voz, sin tecnicismos ni menús complejos.
+          </p>
+        </div>
+
+        <div class="row g-4">
+          <!-- Servicio 1: Violencia -->
+          <div class="col-12 col-sm-6 col-lg-3">
+            <a href="ciudadano.html?tipo=violencia" class="service-card card-violencia" aria-label="Reportar Violencia o Agresión - Prioridad Alta">
+              <div class="service-icon-box icon-box-violencia">
+                <img src="img/icon-violencia.png" alt="Icono de violencia y agresión" class="service-icon-img">
+              </div>
+              <h3 class="service-title">Violencia</h3>
+              <p class="service-desc">
+                Agresiones físicas, violencia familiar, riñas callejeras o situaciones de amenaza inminente.
+              </p>
+              <div class="mt-auto">
+                <span class="service-priority-badge priority-high">
+                  <i class="bi bi-lightning-charge-fill"></i> Prioridad Alta
+                </span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Servicio 2: Robo -->
+          <div class="col-12 col-sm-6 col-lg-3">
+            <a href="ciudadano.html?tipo=robo" class="service-card card-robo" aria-label="Reportar Robo o Asalto">
+              <div class="service-icon-box icon-box-robo">
+                <img src="img/icon-robo.png" alt="Icono de robo o asalto" class="service-icon-img">
+              </div>
+              <h3 class="service-title">Robo</h3>
+              <p class="service-desc">
+                Asaltos a mano armada, hurto de pertenencias, robo a viviendas, comercios o vehículos.
+              </p>
+              <div class="mt-auto">
+                <span class="service-priority-badge priority-normal">
+                  <i class="bi bi-shield-shaded"></i> Despacho Rápido
+                </span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Servicio 3: Accidente -->
+          <div class="col-12 col-sm-6 col-lg-3">
+            <a href="ciudadano.html?tipo=accidente" class="service-card card-accidente" aria-label="Reportar Accidente de Tránsito">
+              <div class="service-icon-box icon-box-accidente">
+                <img src="img/icon-accidente.png" alt="Icono de accidente de tránsito" class="service-icon-img">
+              </div>
+              <h3 class="service-title">Accidente</h3>
+              <p class="service-desc">
+                Colisiones de tránsito, atropellos vehiculares o emergencias en pistas y avenidas principales.
+              </p>
+              <div class="mt-auto">
+                <span class="service-priority-badge priority-normal">
+                  <i class="bi bi-car-front-fill"></i> Vía Pública
+                </span>
+              </div>
+            </a>
+          </div>
+
+          <!-- Servicio 4: Auxilio -->
+          <div class="col-12 col-sm-6 col-lg-3">
+            <a href="ciudadano.html?tipo=auxilio" class="service-card card-auxilio" aria-label="Pedir Auxilio o Emergencia Médica - Prioridad Alta">
+              <div class="service-icon-box icon-box-auxilio">
+                <img src="img/icon-auxilio.png" alt="Icono de auxilio y rescate médico" class="service-icon-img">
+              </div>
+              <h3 class="service-title">Auxilio</h3>
+              <p class="service-desc">
+                Urgencias médicas, personas desvanecidas, desastres, auxilio a personas en riesgo o extraviadas.
+              </p>
+              <div class="mt-auto">
+                <span class="service-priority-badge priority-high">
+                  <i class="bi bi-lightning-charge-fill"></i> Prioridad Alta
+                </span>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        <!-- Banner de llamada de acción complementaria -->
+        <div class="text-center mt-5 pt-3">
+          <p class="text-muted mb-3">¿Tienes dudas sobre el tipo de emergencia?</p>
+          <a href="ciudadano.html" class="btn btn-danger btn-lg px-4 py-3 rounded-pill fw-bold" style="min-height: 48px;">
+            <i class="bi bi-bell-fill me-2"></i> Abrir Asistente Rápido de Reporte
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════
+         SECCIÓN DE ACCESIBILIDAD E INCLUSIÓN (WCAG 2.1 AA)
+         ════════════════════════════════════════════════════════ -->
+    <section class="section-padding" id="accesibilidad">
+      <div class="container">
+        <div class="accessibility-banner">
+          <div class="row align-items-center g-4">
+            <div class="col-12 col-lg-6">
+              <span class="text-warning fw-bold text-uppercase letter-spacing-1 d-block mb-2">Compromiso Social</span>
+              <h2 class="text-white fw-bold mb-3 display-6">Tecnología Sin Barreras para Chorrillos</h2>
+              <p class="text-light opacity-90 mb-4 fs-5">
+                Desarrollado bajo los estándares internacionales <strong>WCAG 2.1 Nivel AA</strong> para que cualquier vecino, 
+                sin importar su edad, nivel de instrucción o capacidades físicas, pueda recibir auxilio inmediato.
+              </p>
+              <a href="ciudadano.html" class="btn btn-warning text-dark fw-bold px-4 py-3 rounded-pill">
+                <i class="bi bi-universal-access me-2"></i> Probar Modo Accesible
+              </a>
+            </div>
+
+            <div class="col-12 col-lg-6">
+              <div class="row g-3">
+                <div class="col-12 col-sm-6">
+                  <div class="feature-pill">
+                    <i class="bi bi-volume-up-fill" aria-hidden="true"></i>
+                    <div>
+                      <strong class="text-white d-block">Audio Descriptivo</strong>
+                      <small class="text-light opacity-75">Lectura por voz integrada</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-sm-6">
+                  <div class="feature-pill">
+                    <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+                    <div>
+                      <strong class="text-white d-block">GPS sin Digitación</strong>
+                      <small class="text-light opacity-75">Geolocalización con 1 tap</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-sm-6">
+                  <div class="feature-pill">
+                    <i class="bi bi-mic-fill" aria-hidden="true"></i>
+                    <div>
+                      <strong class="text-white d-block">Referencias de Voz</strong>
+                      <small class="text-light opacity-75">Graba notas sonoras de apoyo</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12 col-sm-6">
+                  <div class="feature-pill">
+                    <i class="bi bi-incognito" aria-hidden="true"></i>
+                    <div>
+                      <strong class="text-white d-block">100% Confidencial</strong>
+                      <small class="text-light opacity-75">Sin recopilar datos personales</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════
+         5. SECCIÓN DE CONTACTO / FOOTER INSTITUCIONAL
+         ════════════════════════════════════════════════════════ -->
+    <footer class="footer-custom" id="contacto">
+      <div class="container">
+        <div class="row g-5">
+          <!-- Columna 1: Identidad Institucional -->
+          <div class="col-12 col-lg-4">
+            <img src="img/logo-municipalidad.png" alt="Municipalidad de Chorrillos" class="footer-logo">
+            <p class="text-light opacity-75 mb-3">
+              Municipalidad Distrital de Chorrillos. Gerencia de Seguridad Ciudadana. Comprometidos con la tranquilidad, 
+              orden y auxilio oportuno para cada uno de nuestros vecinos.
+            </p>
+            <div class="emergency-hotline">
+              <small class="text-light d-block text-uppercase fw-bold opacity-75">Central de Emergencias 24 Horas:</small>
+              <div class="number">(01) 680-3000</div>
+              <small class="text-light opacity-90"><i class="bi bi-telephone-fill me-1"></i> Línea Gratuita Directa de Chorrillos</small>
+            </div>
+          </div>
+
+          <!-- Columna 2: Canales de Orientación -->
+          <div class="col-12 col-sm-6 col-lg-4">
+            <h4 class="footer-heading">Orientación y Enlaces</h4>
+            <ul class="footer-links">
+              <li><a href="#inicio"><i class="bi bi-chevron-right me-1 text-danger"></i> Inicio de la Plataforma</a></li>
+              <li><a href="ciudadano.html"><i class="bi bi-chevron-right me-1 text-danger"></i> Reportar Emergencia (Móvil)</a></li>
+              <li><a href="/dashboard"><i class="bi bi-chevron-right me-1 text-danger"></i> Portal de Operadores Central</a></li>
+              <li><a href="/sereno"><i class="bi bi-chevron-right me-1 text-danger"></i> Acceso Agentes de Serenazgo</a></li>
+              <li><a href="#servicios"><i class="bi bi-chevron-right me-1 text-danger"></i> Catálogo de Incidentes</a></li>
+              <li><a href="#accesibilidad"><i class="bi bi-chevron-right me-1 text-danger"></i> Manual de Inclusión Digital</a></li>
+            </ul>
+          </div>
+
+          <!-- Columna 3: Información Institucional y Ubicación -->
+          <div class="col-12 col-sm-6 col-lg-4">
+            <h4 class="footer-heading">Sede Institucional</h4>
+            <p class="text-light opacity-75 mb-2">
+              <i class="bi bi-geo-alt-fill text-danger me-2"></i>
+              Av. Fernando Terán 550, Chorrillos, Lima - Perú
+            </p>
+            <p class="text-light opacity-75 mb-2">
+              <i class="bi bi-clock-fill text-danger me-2"></i>
+              Atención presencial: Lunes a Viernes 8:00 am - 5:00 pm
+            </p>
+            <p class="text-light opacity-75 mb-4">
+              <i class="bi bi-shield-shaded text-danger me-2"></i>
+              Central Serenazgo: Monitoreo continuo 24 horas los 365 días
+            </p>
+
+            <div class="d-flex gap-2">
+              <a href="https://www.facebook.com/munichorrillos" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-sm rounded-circle p-2" style="width: 40px; height: 40px;" aria-label="Facebook institucional">
+                <i class="bi bi-facebook"></i>
+              </a>
+              <a href="https://www.instagram.com/munichorrillos" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-sm rounded-circle p-2" style="width: 40px; height: 40px;" aria-label="Instagram institucional">
+                <i class="bi bi-instagram"></i>
+              </a>
+              <a href="https://twitter.com/munichorrillos" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-sm rounded-circle p-2" style="width: 40px; height: 40px;" aria-label="Twitter X institucional">
+                <i class="bi bi-twitter-x"></i>
+              </a>
+              <a href="https://www.gob.pe/munichorrillos" target="_blank" rel="noopener noreferrer" class="btn btn-outline-light btn-sm rounded-circle p-2" style="width: 40px; height: 40px;" aria-label="Portal GOB.PE Chorrillos">
+                <i class="bi bi-globe"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Copyright y Créditos -->
+        <div class="footer-bottom">
+          <div class="row align-items-center">
+            <div class="col-md-6 text-center text-md-start mb-2 mb-md-0">
+              © 2026 Municipalidad Distrital de Chorrillos · Todos los derechos reservados.
+            </div>
+            <div class="col-md-6 text-center text-md-end text-light opacity-75">
+              Sistema de Seguridad Ciudadana Inclusiva v1.0
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <!-- Botón Flotante para Volver Arriba -->
+  <button type="button" class="btn-back-to-top" id="btnBackToTop" aria-label="Volver arriba">
+    <i class="bi bi-arrow-up"></i>
+  </button>
+
+  <!-- Bootstrap 5.3 Bundle con Popper vía CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+  <!-- ════════════════════════════════════════════════════════
+       SCRIPTS DE INTERACCIÓN (SCROLL NAVBAR & ACCESIBILIDAD)
+       ════════════════════════════════════════════════════════ -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const navbar = document.getElementById('mainNavbar');
+      const btnBackToTop = document.getElementById('btnBackToTop');
+      const navLinks = document.querySelectorAll('.nav-link-custom');
+      const navCollapse = document.getElementById('navbarContent');
+
+      // 1. Cambio de transparencia a sólido al hacer Scroll
+      function handleScroll() {
+        if (window.scrollY > 40) {
+          navbar.classList.add('navbar-scrolled');
+          btnBackToTop.classList.add('show');
+        } else {
+          navbar.classList.remove('navbar-scrolled');
+          btnBackToTop.classList.remove('show');
+        }
+      }
+
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      handleScroll(); // Chequeo inicial
+
+      // 2. Botón Volver Arriba
+      btnBackToTop.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+
+      // 3. Cerrar menú móvil al hacer clic en un enlace
+      navLinks.forEach(link => {
+        link.addEventListener('click', () => {
+          if (window.innerWidth < 992 && navCollapse.classList.contains('show')) {
+            const bsCollapse = bootstrap.Collapse.getInstance(navCollapse);
+            if (bsCollapse) bsCollapse.hide();
+          }
+        });
+      });
+
+      // 4. ScrollSpy manual para resaltar enlace activo
+      const sections = document.querySelectorAll('section[id], header[id], footer[id]');
+      window.addEventListener('scroll', () => {
+        let current = '';
+        const scrollPosition = window.scrollY + 120;
+
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop;
+          const sectionHeight = section.offsetHeight;
+          if (scrollPosition >= sectionTop && scrollPosition < sectionTop + sectionHeight) {
+            current = section.getAttribute('id');
+          }
+        });
+
+        navLinks.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === `#${current}`) {
+            link.classList.add('active');
+          }
+        });
+      }, { passive: true });
+    });
+  </script>
+</body>
+</html>

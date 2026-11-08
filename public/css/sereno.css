@@ -1,0 +1,315 @@
+/* public/css/sereno.css — Interfaz Serenazgo en campo (Mobile-first) */
+
+/* ════════════════════════════════════════════════════════
+   LAYOUT GENERAL SERENAZGO
+   ════════════════════════════════════════════════════════ */
+.sereno-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+/* ─── Header Serenazgo ────────────────────────────────── */
+.sereno-header {
+  background: #1A237E;
+  color: #fff;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.sereno-header h1 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: #fff;
+}
+
+.sereno-status-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: rgba(255,255,255,.85);
+}
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #4CAF50;
+}
+.status-dot.ocupado { background: #FF9800; }
+.status-dot.fuera   { background: #F44336; }
+
+/* ─── Pantallas Serenazgo ─────────────────────────────── */
+.sereno-screen {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  animation: fadeInUp .2s ease;
+}
+.sereno-screen.active { display: flex; }
+
+/* ════════════════════════════════════════════════════════
+   LOGIN SERENAZGO
+   ════════════════════════════════════════════════════════ */
+.sereno-login {
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  background: linear-gradient(165deg, #1A237E, #283593, #1565C0);
+  padding: var(--space-6);
+  min-height: 100dvh;
+}
+
+.sereno-login-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8) var(--space-6);
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  box-shadow: var(--shadow-xl);
+}
+
+.sereno-login-logo {
+  text-align: center;
+}
+.sereno-login-logo .logo-icon { font-size: 3.5rem; display: block; }
+.sereno-login-logo h2 { font-size: var(--font-size-xl); color: #1A237E; margin: var(--space-2) 0 var(--space-1); }
+.sereno-login-logo p { font-size: var(--font-size-sm); color: var(--color-text-muted); margin: 0; }
+
+/* ════════════════════════════════════════════════════════
+   PANTALLA PRINCIPAL SERENAZGO
+   ════════════════════════════════════════════════════════ */
+.sereno-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ─── Mi Asignación Actual ─────────────────────────────── */
+.asignacion-banner {
+  background: #1A237E;
+  color: #fff;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.asignacion-banner.sin-asignacion {
+  background: var(--color-primary);
+}
+
+.asignacion-label {
+  font-size: var(--font-size-sm);
+  color: rgba(255,255,255,.7);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: var(--font-weight-semibold);
+}
+
+.asignacion-tipo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.asignacion-tipo .tipo-icon { font-size: 2.5rem; }
+.asignacion-tipo-text h2  { font-size: var(--font-size-xl); color: #fff; text-transform: capitalize; }
+.asignacion-tipo-text p   { font-size: var(--font-size-sm); color: rgba(255,255,255,.8); margin: 0; }
+
+.asignacion-ticket {
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: rgba(255,255,255,.7);
+  background: rgba(255,255,255,.1);
+  display: inline-block;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+}
+
+.asignacion-eta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: rgba(255,255,255,.1);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+}
+.asignacion-eta .eta-val  { font-size: 2rem; font-weight: var(--font-weight-bold); color: #fff; }
+.asignacion-eta .eta-unit { font-size: var(--font-size-sm); color: rgba(255,255,255,.75); }
+
+/* ─── Mapa de asignación ───────────────────────────────── */
+#mapa-sereno {
+  height: 220px;
+  flex-shrink: 0;
+}
+
+/* ─── Acciones Rápidas ────────────────────────────────── */
+.acciones-rapidas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.accion-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-3);
+  border-radius: var(--radius-xl);
+  border: 2px solid transparent;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all var(--transition);
+  min-height: 100px;
+  -webkit-tap-highlight-color: transparent;
+}
+.accion-btn:active { transform: scale(0.95); }
+
+.accion-en-camino  { background: #EDE7F6; color: #4527A0; border-color: #B39DDB; }
+.accion-en-camino:hover  { background: #D1C4E9; }
+
+.accion-atendido   { background: #E8F5E9; color: #1B5E20; border-color: #A5D6A7; }
+.accion-atendido:hover   { background: #C8E6C9; }
+
+.accion-incidente  { background: var(--color-high-bg); color: var(--color-high); border-color: #EF9A9A; }
+.accion-incidente:hover  { background: #FFCDD2; }
+
+.accion-disponible { background: var(--color-normal-bg); color: var(--color-normal); border-color: #90CAF9; }
+.accion-disponible:hover { background: #BBDEFB; }
+
+.accion-btn .accion-icon { font-size: 2rem; }
+
+/* ════════════════════════════════════════════════════════
+   LISTA DE INCIDENTES SERENAZGO
+   ════════════════════════════════════════════════════════ */
+.sereno-incidents-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sereno-inc-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--color-border);
+  padding: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  transition: all var(--transition);
+}
+.sereno-inc-card.alta  { border-color: var(--color-high); }
+.sereno-inc-card.alta:hover { background: var(--color-high-bg); }
+.sereno-inc-card:hover { background: var(--color-bg); }
+
+.sereno-inc-icon { font-size: 2rem; }
+.sereno-inc-info { flex: 1; min-width: 0; }
+.sereno-inc-info .inc-tipo   { font-weight: var(--font-weight-bold); text-transform: capitalize; }
+.sereno-inc-info .inc-ticket { font-size: var(--font-size-sm); color: var(--color-text-muted); font-family: monospace; }
+.sereno-inc-info .inc-ref    { font-size: var(--font-size-sm); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ════════════════════════════════════════════════════════
+   MODAL CIERRE DE INCIDENTE (RF-07)
+   ════════════════════════════════════════════════════════ */
+.cierre-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+.cierre-modal-overlay.hidden { display: none; }
+
+.cierre-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: var(--space-6);
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: slideUpModal .25s ease;
+}
+@keyframes slideUpModal { from { transform: translateY(60%); } to { transform: translateY(0); } }
+
+.cierre-modal h3 { font-size: var(--font-size-xl); color: var(--color-primary); }
+.cierre-modal .modal-drag { width: 40px; height: 4px; background: var(--color-border); border-radius: 2px; margin: 0 auto var(--space-2); }
+
+/* ════════════════════════════════════════════════════════
+   BARRA INFERIOR NAVEGACIÓN SERENAZGO
+   ════════════════════════════════════════════════════════ */
+.sereno-bottom-nav {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-surface);
+  border-top: 2px solid var(--color-border);
+  display: flex;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.08);
+}
+
+.sereno-nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: .7rem;
+  font-weight: var(--font-weight-medium);
+  min-height: var(--touch-target);
+  transition: color var(--transition), background var(--transition);
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.sereno-nav-btn:hover { background: var(--color-bg); }
+.sereno-nav-btn.active { color: #1A237E; }
+.sereno-nav-btn .nav-icon { font-size: 1.3rem; }
+
+/* ════════════════════════════════════════════════════════
+   INDICADOR DE CONEXIÓN (campo)
+   ════════════════════════════════════════════════════════ */
+.conexion-indicator {
+  position: fixed;
+  top: 80px;
+  right: var(--space-4);
+  background: var(--color-success-bg);
+  color: #fff;
+  font-size: .7rem;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-bold);
+  z-index: 50;
+  box-shadow: var(--shadow);
+}
+.conexion-indicator.offline { background: var(--color-high); }
+
+@media (min-width: 768px) {
+  .sereno-app { max-width: 480px; margin: 0 auto; }
+}
+

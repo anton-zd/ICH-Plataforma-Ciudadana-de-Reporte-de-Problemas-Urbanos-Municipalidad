@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#061A2E">
+  <meta name="description" content="Panel de Control y Despacho - Central de Serenazgo Chorrillos">
+  <title>Central de Operaciones — Serenazgo Chorrillos</title>
+
+  <!-- Google Fonts: Montserrat & Roboto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap 5.3 CSS vía CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+
+  <!-- Estilos compartidos -->
+  <link rel="stylesheet" href="/css/shared.css">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖥️</text></svg>">
+
+  <style>
+    /* Estilos específicos para el Dashboard de Operador (peru.info Desktop Grid) */
+    .dashboard-container {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--color-bg);
+    }
+
+    .topbar-op {
+      background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+      color: #FFFFFF;
+      padding: 0.85rem 1.75rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    .pulse-dot-live {
+      width: 10px;
+      height: 10px;
+      background: #10B981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulseLive 1.8s infinite;
+    }
+    @keyframes pulseLive {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* Sidebar de navegación para escritorio */
+    .sidebar-op {
+      background: #FFFFFF;
+      border-right: 1px solid var(--color-border);
+      min-height: calc(100vh - 65px);
+      padding: 1.5rem 1rem;
+    }
+
+    .nav-item-dashboard {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.85rem 1.15rem;
+      color: var(--color-text-muted);
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.92rem;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      margin-bottom: 0.35rem;
+      min-height: 48px;
+    }
+    .nav-item-dashboard:hover {
+      background: #F1F5F9;
+      color: var(--color-primary-dark);
+    }
+    .nav-item-dashboard.active {
+      background: #EFF6FF;
+      color: var(--color-primary-light);
+      border-color: #BFDBFE;
+      font-weight: 700;
+    }
+
+    /* Tarjetas Métricas */
+    .stat-card-op {
+      background: #FFFFFF;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+      transition: var(--transition-smooth);
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card-op:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+    }
+    .stat-card-op.urgente { border-top: 5px solid var(--color-high); }
+    .stat-card-op.normal  { border-top: 5px solid var(--color-primary-light); }
+    .stat-card-op.exito   { border-top: 5px solid var(--color-success); }
+    .stat-card-op.info    { border-top: 5px solid var(--color-warning); }
+
+    .stat-value {
+      font-family: var(--font-heading);
+      font-size: 2.25rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+    }
+    .stat-label {
+      font-size: 0.85rem;
+      color: var(--color-text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Lista de Incidentes Activos */
+    .incident-card {
+      background: #FFFFFF;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      transition: var(--transition-smooth);
+    }
+    .incident-card:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--color-border-dark);
+    }
+    .incident-card.prioridad-alta {
+      border-left: 6px solid #DC2626;
+      background: linear-gradient(90deg, #FEF2F2 0%, #FFFFFF 12%);
+    }
+    .incident-card.prioridad-normal {
+      border-left: 6px solid #0284C7;
+    }
+
+    .inc-tipo-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+      flex-shrink: 0;
+    }
+    .tipo-bg-violencia { background: #FEE2E2; }
+    .tipo-bg-robo      { background: #FEF3C7; }
+    .tipo-bg-accidente { background: #E0F2FE; }
+    .tipo-bg-auxilio   { background: #D1FAE5; }
+
+    /* Modales */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6, 26, 46, 0.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1060;
+      padding: 1.25rem;
+    }
+    .modal-custom {
+      background: #FFFFFF;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-xl);
+      width: 100%;
+      max-width: 580px;
+      max-height: 90vh;
+      overflow-y: auto;
+      border: 1px solid var(--color-border);
+    }
+
+    .unidad-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius-md);
+      margin-bottom: 0.65rem;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+    }
+    .unidad-row:hover, .unidad-row.selected {
+      border-color: var(--color-primary-light);
+      background: #EFF6FF;
+    }
+    .unidad-row.sugerida {
+      border-color: var(--color-success);
+      background: #ECFDF5;
+    }
+
+    /* Pantalla de Login */
+    .login-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+      padding: 1.5rem;
+    }
+    .login-box {
+      background: #FFFFFF;
+      border-radius: var(--radius-lg);
+      padding: 2.75rem 2.25rem;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: var(--shadow-xl);
+    }
+
+    .hidden { display: none !important; }
+
+    .analytics-chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+
+    @media (max-width: 575.98px) {
+      .analytics-chart-wrap { height: 260px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Selector de rol para evaluación rápida -->
+  <aside class="demo-role-switcher" aria-label="Cambiar rol del sistema">
+    <span class="demo-title">
+      <i class="bi bi-shield-lock-fill"></i> Central de Operaciones · Chorrillos
+    </span>
+    <nav class="demo-role-links">
+      <a href="/" class="demo-role-link">🏠 Inicio Portal</a>
+      <a href="/ciudadano.html" class="demo-role-link">👤 Reporte Móvil</a>
+      <a href="/dashboard" class="demo-role-link active" aria-current="page">🖥️ Operador Central</a>
+      <a href="/sereno" class="demo-role-link">🚔 Serenazgo Campo</a>
+    </nav>
+  </aside>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PANTALLA DE ACCESO / LOGIN OPERADOR
+       ══════════════════════════════════════════════════════════ -->
+  <div class="login-container" id="login-screen">
+    <div class="login-box text-center">
+      <div class="mb-3">
+        <span class="fs-1">🛡️</span>
+      </div>
+      <h1 class="h4 fw-bold text-dark mb-1">Central de Monitoreo</h1>
+      <p class="text-muted small mb-4">Ingreso de Personal de Serenazgo Chorrillos</p>
+
+      <form id="login-form" class="text-start" aria-label="Formulario de inicio de sesión de operador">
+        <div class="mb-3">
+          <label for="login-usuario" class="form-label fw-bold small text-muted">Usuario</label>
+          <input type="text" id="login-usuario" class="form-control py-2" placeholder="operador1" value="operador1" required autocomplete="username">
+        </div>
+        <div class="mb-3">
+          <label for="login-password" class="form-label fw-bold small text-muted">Contraseña</label>
+          <input type="password" id="login-password" class="form-control py-2" placeholder="••••••••" value="serenazgo2024" required autocomplete="current-password">
+        </div>
+
+        <div class="alert alert-danger py-2 small hidden" id="login-error" role="alert">
+          Credenciales incorrectas. Verifica usuario y clave.
+        </div>
+
+        <button type="submit" class="btn btn-touch-primary w-100 py-3 fw-bold mt-2" id="btn-login" style="min-height: 48px;">
+          <i class="bi bi-box-arrow-in-right me-1"></i> Iniciar Sesión en Central
+        </button>
+      </form>
+
+      <div class="mt-4 pt-3 border-top small text-muted">
+        Credenciales demo: <code>operador1</code> / <code>serenazgo2024</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       APLICACIÓN DASHBOARD (POST-LOGIN)
+       ══════════════════════════════════════════════════════════ -->
+  <div class="dashboard-container hidden" id="dashboard-app">
+    <!-- Topbar Institucional -->
+    <header class="topbar-op d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <span class="fs-3">🛡️</span>
+        <div>
+          <h1 class="h6 text-white mb-0 fw-bold">Central de Despacho Chorrillos</h1>
+          <small class="text-white-50" style="font-size: 0.72rem;">Monitoreo en Tiempo Real</small>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-3">
+        <!-- Indicador En Vivo -->
+        <div class="d-flex align-items-center gap-2 bg-dark bg-opacity-25 px-3 py-1 rounded-pill border border-light border-opacity-25 small text-white">
+          <div class="pulse-dot-live"></div>
+          <span class="fw-semibold" style="font-size: 0.8rem;">En Vivo</span>
+        </div>
+
+        <button class="btn btn-sm btn-outline-light rounded-pill px-3 fw-semibold d-flex align-items-center gap-1" id="btn-refresh" style="min-height: 38px;">
+          <i class="bi bi-arrow-clockwise"></i>
+          <span>Actualizar</span>
+        </button>
+
+        <div class="d-flex align-items-center gap-2 text-white ps-2 border-start border-light border-opacity-25">
+          <div class="bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 36px; height: 36px;">
+            👮
+          </div>
+          <span class="small fw-semibold text-white d-none d-sm-inline" id="user-nombre">Operador</span>
+        </div>
+
+        <button class="btn btn-sm btn-light rounded-circle" id="btn-logout" title="Cerrar Sesión" style="width: 38px; height: 38px;">
+          <i class="bi bi-box-arrow-right"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="container-fluid flex-grow-1 p-0">
+      <div class="row g-0">
+        <!-- Sidebar de Navegación -->
+        <nav class="col-12 col-lg-2 sidebar-op" aria-label="Menú de operaciones">
+          <div class="small fw-bold text-muted text-uppercase mb-3 px-2" style="font-size: 0.72rem;">Bandejas y Módulos</div>
+          
+          <button class="nav-item-dashboard active" data-view="incidentes">
+            <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+            <span>Incidentes</span>
+            <span class="badge bg-danger rounded-pill ms-auto" id="nav-badge-incidentes">0</span>
+          </button>
+
+          <button class="nav-item-dashboard" data-view="mapa">
+            <i class="bi bi-geo-alt-fill text-primary"></i>
+            <span>Mapa Táctico</span>
+          </button>
+
+          <button class="nav-item-dashboard" data-view="unidades">
+            <i class="bi bi-car-front-fill text-success"></i>
+            <span>Patrullas</span>
+          </button>
+
+          <div class="small fw-bold text-muted text-uppercase mt-4 mb-2 px-2" style="font-size: 0.72rem;">Historial y Auditoría</div>
+
+          <button class="nav-item-dashboard" data-view="historial">
+            <i class="bi bi-clock-history text-secondary"></i>
+            <span>Historial</span>
+          </button>
+
+          <button class="nav-item-dashboard" data-view="estadisticas">
+            <i class="bi bi-bar-chart-fill text-info"></i>
+            <span>Estadísticas</span>
+          </button>
+        </nav>
+
+        <!-- Contenido Central Principal -->
+        <main class="col-12 col-lg-10 p-3 p-lg-4">
+          
+          <!-- VISTA: INCIDENTES ACTIVOS (RF-06) -->
+          <section class="view active" id="view-incidentes">
+            <!-- Métricas Clave Superiores -->
+            <div class="row g-3 mb-4">
+              <div class="col-6 col-xl-3">
+                <div class="stat-card-op urgente">
+                  <div class="stat-value text-danger" id="stat-prioridad-alta">0</div>
+                  <div class="stat-label">Prioridad Alta (Alerta)</div>
+                </div>
+              </div>
+              <div class="col-6 col-xl-3">
+                <div class="stat-card-op normal">
+                  <div class="stat-value text-primary" id="stat-total-activos">0</div>
+                  <div class="stat-label">Emergencias Activas</div>
+                </div>
+              </div>
+              <div class="col-6 col-xl-3">
+                <div class="stat-card-op exito">
+                  <div class="stat-value text-success" id="stat-atendidos-hoy">0</div>
+                  <div class="stat-label">Atendidos Hoy</div>
+                </div>
+              </div>
+              <div class="col-6 col-xl-3">
+                <div class="stat-card-op info">
+                  <div class="stat-value text-warning" id="stat-unidades-disponibles">0</div>
+                  <div class="stat-label">Patrullas Disponibles</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel de Control y Filtros -->
+            <div class="card-modern">
+              <div class="card-modern-header flex-wrap gap-2">
+                <div>
+                  <h2 class="h5 mb-0 fw-bold text-dark">🚨 Cola de Emergencias Entrantes</h2>
+                  <small class="text-muted">Ordenadas automáticamente por criticidad (RN-01: Violencia y Auxilio al inicio)</small>
+                </div>
+
+                <!-- Filtros rápidos por estado -->
+                <div class="d-flex gap-2 flex-wrap" role="group" aria-label="Filtros de estado">
+                  <button class="btn btn-sm btn-outline-secondary filter-btn active rounded-pill px-3" data-filter="todos">Todos</button>
+                  <button class="btn btn-sm btn-outline-secondary filter-btn rounded-pill px-3" data-filter="recibido">Recibidos</button>
+                  <button class="btn btn-sm btn-outline-secondary filter-btn rounded-pill px-3" data-filter="asignado">Asignados</button>
+                  <button class="btn btn-sm btn-outline-secondary filter-btn rounded-pill px-3" data-filter="en_camino">En Camino</button>
+                </div>
+              </div>
+
+              <!-- Lista Dinámica de Emergencias -->
+              <div class="p-3 p-lg-4" id="incidents-list" role="list">
+                <div class="text-center py-5 text-muted">
+                  <div class="spinner-border text-primary mb-2" role="status"></div>
+                  <div>Cargando emergencias activas…</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VISTA: MAPA TÁCTICO -->
+          <section class="view hidden" id="view-mapa">
+            <div class="card-modern">
+              <div class="card-modern-header">
+                <h2 class="h5 mb-0 fw-bold text-dark">🗺️ Mapa de Operaciones en Chorrillos</h2>
+              </div>
+              <div class="p-3">
+                <div id="mapa-dashboard" style="height: 520px; border-radius: 12px;"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VISTA: PATRULLAS -->
+          <section class="view hidden" id="view-unidades">
+            <div class="card-modern">
+              <div class="card-modern-header">
+                <h2 class="h5 mb-0 fw-bold text-dark">🚔 Estado de la Flota de Serenazgo</h2>
+              </div>
+              <div class="p-4">
+                <div class="row g-3" id="unidades-grid"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VISTA: HISTORIAL -->
+          <section class="view hidden" id="view-historial">
+            <div class="card-modern">
+              <div class="card-modern-header">
+                <h2 class="h5 mb-0 fw-bold text-dark">📋 Historial de Incidentes Atendidos</h2>
+              </div>
+              <div class="table-responsive p-3">
+                <table class="table table-hover align-middle">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Tipo</th>
+                      <th>Estado</th>
+                      <th>Unidad Asignada</th>
+                      <th>Fecha de Cierre</th>
+                      <th>Observaciones de Campo</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historial-tbody">
+                    <tr><td colspan="6" class="text-center py-4 text-muted">Cargando historial…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- VISTA: ESTADÍSTICAS -->
+          <section class="view hidden" id="view-estadisticas">
+            <div class="card-modern">
+              <div class="card-modern-header flex-wrap gap-3">
+                <h2 class="h5 mb-0 fw-bold text-dark">📊 Reporte y Métricas de Rendimiento</h2>
+                <div class="d-flex flex-wrap gap-2 ms-auto">
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="filtro-periodo-estadisticas">Periodo</label>
+                    <select class="form-select form-select-sm" id="filtro-periodo-estadisticas">
+                      <option value="hoy">Hoy</option>
+                      <option value="semana">Esta semana</option>
+                      <option value="mes">Este mes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="filtro-sector-estadisticas">Sector</label>
+                    <select class="form-select form-select-sm" id="filtro-sector-estadisticas">
+                      <option value="todos">Todos</option>
+                      <option value="Norte">Norte</option>
+                      <option value="Sur">Sur</option>
+                      <option value="Centro">Centro</option>
+                      <option value="Este">Este</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="p-4">
+                <div id="estadisticas-error" class="alert alert-warning small hidden" role="status"></div>
+                <p class="alert alert-info py-2 small" role="note">
+                  Los sectores se estiman a partir de las coordenadas GPS y son referenciales; no representan límites oficiales.
+                </p>
+                <div class="row g-3 mb-4">
+                  <div class="col-12 col-sm-6 col-xl-3">
+                    <div class="stat-card-op normal h-100">
+                      <div class="stat-value text-primary" id="kpi-reportes-registrados">0</div>
+                      <div class="stat-label">Reportes Registrados</div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6 col-xl-3">
+                    <div class="stat-card-op urgente h-100">
+                      <div class="stat-value text-danger" id="kpi-reportes-pendientes">0</div>
+                      <div class="stat-label">Reportes Pendientes</div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6 col-xl-3">
+                    <div class="stat-card-op exito h-100">
+                      <div class="stat-value text-success" id="kpi-reportes-atendidos">0</div>
+                      <div class="stat-label">Reportes Atendidos</div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6 col-xl-3">
+                    <div class="stat-card-op info h-100">
+                      <div class="stat-value text-warning" id="kpi-tiempo-promedio">— <span class="fs-6">min</span></div>
+                      <div class="stat-label">Tiempo Promedio de Solución</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row g-3">
+                  <div class="col-12 col-xl-6">
+                    <div class="card-modern h-100">
+                      <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Reportes por Categoría</h3></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-categorias" aria-label="Gráfico circular de reportes por categoría"></canvas></div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-xl-6">
+                    <div class="card-modern h-100">
+                      <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Reportes por Sector</h3></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-sectores" aria-label="Gráfico de barras de reportes por sector"></canvas></div>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <div class="card-modern">
+                      <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Evolución Temporal de Reportes</h3></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-tendencia" aria-label="Gráfico de líneas de reportes en el tiempo"></canvas></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       MODAL: ASIGNACIÓN Y DESPACHO EN 1 CLIC (RF-06, RN-02)
+       ══════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="modal-asignar" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-custom">
+      <div class="p-4 border-bottom d-flex align-items-center justify-content-between">
+        <h3 class="h5 mb-0 fw-bold text-dark" id="modal-title">Despacho de Unidad</h3>
+        <button class="btn-close" id="btn-cerrar-modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="p-4">
+        <div class="p-3 rounded-3 bg-light border mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold h6 mb-0 text-dark" id="modal-inc-tipo">—</span>
+            <span class="badge-status badge-alta" id="modal-inc-prioridad">ALTA</span>
+          </div>
+          <small class="text-muted" id="modal-inc-ticket">—</small>
+        </div>
+
+        <div id="modal-evidencia-container" class="mb-3 hidden p-3 bg-white border rounded-3">
+          <label class="form-label fw-bold small text-muted text-uppercase mb-2">Evidencia Adjunta de Campo:</label>
+          <div class="d-flex flex-column gap-2">
+            <img id="modal-foto-preview" class="img-fluid rounded border hidden" alt="Evidencia fotográfica del ciudadano" style="max-height: 220px; object-fit: cover;">
+            <audio id="modal-audio-preview" controls class="w-100 hidden"></audio>
+          </div>
+        </div>
+
+        <label class="form-label fw-bold small text-muted text-uppercase mb-2">
+          Unidades sugeridas por cercanía GPS (Algoritmo Haversine):
+        </label>
+        <div id="modal-unidades-list" class="mb-3">
+          <!-- Lista generada por JS -->
+        </div>
+      </div>
+      <div class="p-3 bg-light border-top d-flex justify-content-end gap-2">
+        <button class="btn btn-light px-4" id="btn-cancelar-asignacion" style="min-height: 48px;">Cancelar</button>
+        <button class="btn btn-touch-primary px-4 fw-bold" id="btn-confirmar-asignacion" disabled style="min-height: 48px;">
+          <i class="bi bi-send-fill me-1"></i> Despachar Unidad
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       MODAL: REGISTRO DE CIERRE DE INCIDENTE (RF-07)
+       ══════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="modal-cierre" role="dialog" aria-modal="true" aria-labelledby="modal-cierre-title">
+    <div class="modal-custom">
+      <div class="p-4 border-bottom d-flex align-items-center justify-content-between">
+        <h3 class="h5 mb-0 fw-bold text-dark" id="modal-cierre-title">Registrar Cierre del Incidente</h3>
+        <button class="btn-close" id="btn-cerrar-modal-cierre" aria-label="Cerrar"></button>
+      </div>
+      <div class="p-4">
+        <div class="mb-3">
+          <label for="cierre-estado" class="form-label fw-bold small text-muted">Resultado de la atención</label>
+          <select id="cierre-estado" class="form-select py-2">
+            <option value="atendido">✅ Atendido satisfactoriamente</option>
+            <option value="cancelado">❌ Cancelado / Falsa alarma</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="cierre-observaciones" class="form-label fw-bold small text-muted">Observaciones de la intervención</label>
+          <textarea id="cierre-observaciones" class="form-control" rows="3" placeholder="Detalla el resultado de la atención..."></textarea>
+        </div>
+      </div>
+      <div class="p-3 bg-light border-top d-flex justify-content-end gap-2">
+        <button class="btn btn-light px-4" id="btn-cancelar-cierre" style="min-height: 48px;">Cancelar</button>
+        <button class="btn btn-touch-success px-4 fw-bold" id="btn-confirmar-cierre" style="min-height: 48px;">
+          <i class="bi bi-check-circle-fill me-1"></i> Confirmar Cierre
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor Toast -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Leaflet & JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

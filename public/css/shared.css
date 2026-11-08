@@ -1,0 +1,613 @@
+/* ==========================================================================
+   shared.css — Sistema Inclusivo de Atención de Serenazgo (Chorrillos)
+   Diseño Unificado (Referencia: peru.info, Mobile First, WCAG 2.1 AA)
+   ========================================================================== */
+
+/* ─── Variables y Design Tokens ─────────────────────────────────────────── */
+:root {
+  /* Paleta Institucional */
+  --color-primary:        #0A2540;   /* Azul marino profundo */
+  --color-primary-dark:   #061A2E;   /* Azul noche corporativo */
+  --color-primary-light:  #1565C0;   /* Azul cobalto interactivo */
+  --color-accent:         #E53935;   /* Rojo emergencia de alto contraste */
+  --color-accent-dark:    #B71C1C;
+  --color-accent-light:   #FF5252;
+  --color-success:        #059669;   /* Verde confirmación WCAG AA */
+  --color-success-bg:     #ECFDF5;
+  --color-warning:        #D97706;   /* Naranja ámbar alerta */
+  --color-warning-bg:     #FFFBEB;
+  --color-high:           #DC2626;   /* Rojo prioridad 1 */
+  --color-high-bg:        #FEF2F2;
+
+  /* Neutrales de Fondo y Superficie */
+  --color-bg:             #F8FAFC;   /* Slate ultra limpio */
+  --color-surface:        #FFFFFF;   /* Blanco puro con whitespace */
+  --color-border:         #E2E8F0;
+  --color-border-dark:    #CBD5E1;
+  --color-text-main:      #0F172A;   /* Texto principal (Contraste 13:1) */
+  --color-text-muted:     #475569;   /* Texto secundario (Contraste 5.5:1) */
+  --color-text-light:     #64748B;
+
+  /* Tipografía */
+  --font-heading:         'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body:            'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Dimensiones y Accesibilidad Táctil (WCAG 2.5.5) */
+  --touch-target:         48px;
+  --radius-sm:            8px;
+  --radius-md:            12px;
+  --radius-lg:            20px;
+  --radius-pill:          50px;
+  --shadow-sm:            0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md:            0 6px 20px rgba(10, 37, 64, 0.08);
+  --shadow-lg:            0 14px 35px rgba(10, 37, 64, 0.12);
+  --shadow-xl:            0 20px 45px rgba(6, 26, 46, 0.18);
+  --transition-smooth:    all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── Reseteo y Base ────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text-main);
+  background-color: var(--color-bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  letter-spacing: -0.02em;
+}
+
+/* Skip link accesible */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  background: var(--color-accent);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  z-index: 10000;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 1rem;
+  outline: 3px solid #fff;
+}
+
+/* Focus Visible para teclado (Accesibilidad) */
+:focus-visible {
+  outline: 3px solid var(--color-primary-light) !important;
+  outline-offset: 2px !important;
+}
+
+/* ─── Barra Superior de Navegación Rápida entre Roles ─────────────────── */
+.demo-role-switcher {
+  background: #061A2E;
+  color: #CBD5E1;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  position: relative;
+  z-index: 9999;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.demo-role-switcher .demo-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: #90CAF9;
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.demo-role-links {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.demo-role-link {
+  color: #E2E8F0;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: var(--transition-smooth);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid transparent;
+}
+.demo-role-link:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+}
+.demo-role-link.active {
+  background: #1565C0;
+  color: #FFFFFF;
+  font-weight: 600;
+  border-color: #64B5F6;
+}
+
+/* ─── Botones Táctiles Accesibles (Mínimo 48x48px) ───────────────────────── */
+.btn-touch {
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.5rem;
+  transition: var(--transition-smooth);
+  text-decoration: none;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.btn-touch:active {
+  transform: scale(0.98);
+}
+
+.btn-touch-primary {
+  background: var(--color-primary);
+  color: #FFFFFF;
+  border-color: var(--color-primary);
+}
+.btn-touch-primary:hover {
+  background: var(--color-primary-dark);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(10, 37, 64, 0.25);
+}
+
+.btn-touch-danger {
+  background: var(--color-accent);
+  color: #FFFFFF;
+  border-color: var(--color-accent);
+}
+.btn-touch-danger:hover {
+  background: var(--color-accent-dark);
+  color: #FFFFFF;
+  box-shadow: 0 6px 18px rgba(229, 57, 53, 0.35);
+}
+
+.btn-touch-success {
+  background: var(--color-success);
+  color: #FFFFFF;
+  border-color: var(--color-success);
+}
+.btn-touch-success:hover {
+  background: #047857;
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.3);
+}
+
+.btn-touch-outline {
+  background: transparent;
+  color: var(--color-primary);
+  border-color: var(--color-border-dark);
+}
+.btn-touch-outline:hover {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-touch-pill {
+  border-radius: var(--radius-pill);
+}
+
+/* ─── Tarjetas Modernas (Estilo White-Space peru.info) ──────────────────── */
+.card-modern {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-smooth);
+  overflow: hidden;
+}
+.card-modern:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-dark);
+}
+.card-modern-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-modern-body {
+  padding: 1.5rem;
+}
+
+/* ─── Badges de Criticidad y Estado ─────────────────────────────────────── */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-heading);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.badge-alta {
+  background: var(--color-high-bg);
+  color: var(--color-high);
+  border: 1px solid #FECACA;
+}
+
+.badge-normal {
+  background: #EFF6FF;
+  color: #1E40AF;
+  border: 1px solid #BFDBFE;
+}
+
+.badge-recibido {
+  background: #EFF6FF;
+  color: #1E40AF;
+}
+
+.badge-asignado {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.badge-en_camino {
+  background: #F3E8FF;
+  color: #6B21A8;
+}
+
+.badge-atendido {
+  background: #ECFDF5;
+  color: #065F46;
+}
+
+.badge-cancelado {
+  background: #F1F5F9;
+  color: #475569;
+}
+
+/* ─── Notificaciones Toast Accesibles ───────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1055;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+  width: min(92vw, 420px);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--color-primary-dark);
+  color: #FFFFFF;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-weight: 500;
+  font-size: 0.92rem;
+  pointer-events: all;
+  animation: toastFadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.toast.success { background: #065F46; border-left: 5px solid #10B981; }
+.toast.error   { background: #991B1B; border-left: 5px solid #EF4444; }
+.toast.info    { background: var(--color-primary-dark); border-left: 5px solid var(--color-primary-light); }
+
+@keyframes toastFadeUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Timeline Secuencial (RF-04) ───────────────────────────────────────── */
+.timeline-stepper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  position: relative;
+  margin: 1.5rem 0;
+  padding: 0 0.5rem;
+}
+.timeline-stepper::before {
+  content: '';
+  position: absolute;
+  top: 22px;
+  left: 35px;
+  right: 35px;
+  height: 3px;
+  background: var(--color-border);
+  z-index: 1;
+}
+
+.timeline-step-item {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+}
+
+.timeline-dot {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 3px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  color: var(--color-text-muted);
+  transition: var(--transition-smooth);
+}
+
+.timeline-step-item.active .timeline-dot {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+  color: #FFFFFF;
+  box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.2);
+}
+
+.timeline-step-item.done .timeline-dot {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #FFFFFF;
+}
+
+.timeline-step-label {
+  font-family: var(--font-heading);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  margin-top: 0.6rem;
+}
+.timeline-step-item.active .timeline-step-label { color: var(--color-primary-light); }
+.timeline-step-item.done .timeline-step-label { color: var(--color-success); }
+
+/* ─── Mapas (Leaflet) ───────────────────────────────────────────────────── */
+.map-responsive {
+  width: 100%;
+  height: 250px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  position: relative;
+  background: #E2E8F0;
+}
+
+/* Spinner de Carga */
+.spinner-border-sm {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+/* Responsive Helpers */
+@media (max-width: 576px) {
+  .btn-touch {
+    width: 100%;
+  }
+}
+
+/* ─── Incidentes en Panel de Operador (Unificado peru.info) ─────────────── */
+.incident-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  transition: var(--transition-smooth);
+}
+.incident-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-dark);
+}
+.incident-card.prioridad-alta {
+  border-left: 6px solid #DC2626;
+  background: linear-gradient(90deg, #FEF2F2 0%, #FFFFFF 15%);
+}
+.incident-card.prioridad-normal {
+  border-left: 6px solid #0284C7;
+}
+
+.inc-tipo-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  flex-shrink: 0;
+}
+.tipo-bg-violencia { background: #FEE2E2; }
+.tipo-bg-robo      { background: #FEF3C7; }
+.tipo-bg-accidente { background: #E0F2FE; }
+.tipo-bg-auxilio   { background: #D1FAE5; }
+
+.inc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-grow: 1;
+  min-width: 0;
+}
+.inc-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.inc-ticket {
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.inc-tipo {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--color-primary-dark);
+}
+.inc-loc {
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+}
+.inc-time {
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+}
+
+.inc-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+.btn-asignar {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.6rem 1.25rem;
+  border-radius: var(--radius-pill);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+.btn-ver-detalle {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  min-height: 36px;
+}
+
+/* ─── Modal de Asignación y Unidades ────────────────────────────────────── */
+.unidad-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.65rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+.unidad-row:hover, .unidad-row.selected {
+  border-color: var(--color-primary-light);
+  background: #EFF6FF;
+}
+.unidad-row.sugerida {
+  border-color: var(--color-success);
+  background: #ECFDF5;
+}
+.unidad-row-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+.unidad-row-info {
+  flex-grow: 1;
+}
+.unidad-row-info .u-nombre {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-primary-dark);
+}
+.unidad-row-info .u-detalle {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.unidad-row .u-eta {
+  text-align: right;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  color: var(--color-primary-light);
+  font-size: 0.95rem;
+}
+.sugerida-label {
+  font-size: 0.68rem;
+  background: var(--color-success);
+  color: #FFFFFF;
+  padding: 2px 8px;
+  border-radius: 50px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+/* ─── Tarjetas en Vista Serenazgo Campo ─────────────────────────────────── */
+.sereno-inc-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: var(--transition-smooth);
+}
+.sereno-inc-card.alta {
+  border-left: 5px solid #DC2626;
+  background: #FFF5F5;
+}
+.sereno-inc-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+.sereno-inc-info {
+  flex-grow: 1;
+  min-width: 0;
+}
+.sereno-inc-info .inc-tipo {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1rem;
+}
+.sereno-inc-info .inc-ticket {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.sereno-inc-info .inc-ref {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
