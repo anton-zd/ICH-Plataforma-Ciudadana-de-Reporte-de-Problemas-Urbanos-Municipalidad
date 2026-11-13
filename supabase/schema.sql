@@ -93,6 +93,13 @@ GRANT UPDATE (
   observaciones, atendido_at, updated_at
 ) ON public.incidentes TO authenticated;
 
+DROP POLICY IF EXISTS "citizens can read their own reports" ON public.incidentes;
+DROP POLICY IF EXISTS "citizens can create their own reports" ON public.incidentes;
+DROP POLICY IF EXISTS "operators can read all reports" ON public.incidentes;
+DROP POLICY IF EXISTS "operators can update reports" ON public.incidentes;
+DROP POLICY IF EXISTS "assigned units can read their reports" ON public.incidentes;
+DROP POLICY IF EXISTS "assigned units can update their reports" ON public.incidentes;
+
 CREATE POLICY "citizens can read their own reports"
   ON public.incidentes FOR SELECT TO authenticated
   USING (
