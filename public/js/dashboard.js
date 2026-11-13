@@ -81,14 +81,15 @@ async function cargarIncidentes() {
   }
 }
 
-async function actualizarDatosDashboard() {
+async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {}) {
   try {
     await cargarIncidentes();
     dashboardState.lastLoadError = null;
     if (document.getElementById('view-historial')?.classList.contains('active')) {
       renderizarHistorial();
     }
-    if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
+    if (actualizarEstadisticas &&
+        document.getElementById('view-estadisticas')?.classList.contains('active')) {
       renderizarEstadisticas();
     }
   } catch (error) {
@@ -853,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 3. Botón de Actualizar manual
   document.getElementById('btn-refresh')?.addEventListener('click', async () => {
-    await actualizarDatosDashboard();
+    await actualizarDatosDashboard({ actualizarEstadisticas: true });
   });
 
   // 4. Filtros de Estado
