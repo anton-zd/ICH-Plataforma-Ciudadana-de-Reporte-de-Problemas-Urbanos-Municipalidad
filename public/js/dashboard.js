@@ -63,7 +63,7 @@ function escaparHTML(valor) {
   })[caracter]);
 }
 
-async function cargarCasos() {
+async function cargarIncidentes() {
   if (!supabaseClient) {
     throw new Error('No se pudo cargar la librería cliente de Supabase.');
   }
@@ -74,13 +74,13 @@ async function cargarCasos() {
     .order('timestamp', { ascending: false });
   if (error) throw error;
   dashboardState.casos = data || [];
+  renderizarDashboard();
 }
 
 async function actualizarDatosDashboard() {
   try {
-    await cargarCasos();
+    await cargarIncidentes();
     dashboardState.lastLoadError = null;
-    renderizarDashboard();
     if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
       renderizarEstadisticas();
     }
@@ -91,6 +91,23 @@ async function actualizarDatosDashboard() {
       dashboardState.lastLoadError = error.message;
     }
   }
+}
+
+async function activarSesionOperador(user) {
+  if (user.app_metadata?.role !== 'operador') {
+    throw new Error('Esta cuenta no tiene permisos de operador.');
+  }
+  dashboardState.usuarioActual = user.id;
+  document.getElementById('login-screen')?.classList.add('hidden');
+  document.getElementById('dashboard-app')?.classList.remove('hidden');
+
+  const userLabel = document.getElementById('user-nombre');
+  if (userLabel) userLabel.textContent = user.app_metadata.nombre || 'Central Chorrillos';
+
+  await actualizarDatosDashboard();
+  await suscribirNuevosIncidentes();
+  if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
+  dashboardState.pollingInterval = setInterval(actualizarDatosDashboard, 2000);
 }
 
 async function suscribirNuevosIncidentes() {
@@ -803,17 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await supabaseClient.auth.signOut();
           throw new Error('Esta cuenta no tiene permisos de operador.');
         }
-        dashboardState.usuarioActual = data.user.id;
-        document.getElementById('login-screen')?.classList.add('hidden');
-        document.getElementById('dashboard-app')?.classList.remove('hidden');
-
-        const userLabel = document.getElementById('user-nombre');
-        if (userLabel) userLabel.textContent = data.user.app_metadata.nombre || 'Central Chorrillos';
-
-        await actualizarDatosDashboard();
-        await suscribirNuevosIncidentes();
-        if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-        dashboardState.pollingInterval = setInterval(actualizarDatosDashboard, 2000);
+        await activarSesionOperador(data.user);
       } catch (error) {
         console.error('No se pudo iniciar sesión como operador:', error);
         if (errorEl) {
@@ -884,6 +891,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!supabaseClient) {
     console.error('No se pudo cargar la librería cliente de Supabase.');
+  } else {
+    supabaseClient.auth.getSession().then(async ({ data, error }) => {
+      if (error) throw error;
+      const user = data.session?.user;
+      if (user?.app_metadata?.role === 'operador') {
+        await activarSesionOperador(user);
+      }
+    }).catch(error => {
+      console.error('No se pudo restaurar la sesión del operador:', error);
+    });
   }
   console.log('Módulo Operador Dashboard inicializado con persistencia Supabase.');
 });

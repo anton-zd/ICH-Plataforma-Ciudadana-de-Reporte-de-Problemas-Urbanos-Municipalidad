@@ -632,93 +632,83 @@ async function procesarEnvioReporte() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span> Despachando emergencia…';
   }
 
-  const conversionesCorrectas = await Promise.all([
-    fotoDataUrlPromise,
-    audioVozDataUrlPromise,
-    audioEvidenceDataUrlPromise
-  ]);
-  if (conversionesCorrectas.includes(false)) {
-    showToast('No se pudieron preparar todas las evidencias. Vuelve a adjuntarlas antes de enviar.', 'error');
-    state.envioEnCurso = false;
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-shield-fill-exclamation me-1"></i> ENVIAR REPORTE';
-    }
-    return;
-  }
-
-  if (!supabaseClient) {
-    showToast('No se pudo conectar con Supabase para enviar el reporte.', 'error');
-    state.envioEnCurso = false;
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-shield-fill-exclamation me-1"></i> ENVIAR REPORTE';
-    }
-    return;
-  }
-
-  // Regla de Negocio RN-01: 'violencia' y 'auxilio' prioridad 1 (Alta)
-  const infoTipo = CATALOGO_TIPOS[state.tipoSeleccionado] || { prioridad: 2 };
-  const prioridad = infoTipo.prioridad;
-  const nuevoIncidente = {
-    ciudadano_dni: state.dniActual,
-    tipo: state.tipoSeleccionado || 'auxilio',
-    prioridad: prioridad,
-    ubicacion: {
-      lat: state.lat,
-      lng: state.lng,
-      direccionAprox: 'Distrito de Chorrillos, Lima'
-    },
-    referencia: state.referenciaTexto || '',
-    tiene_audio: !!(state.audioBlob || state.audioEvidenceBlob),
-    tiene_audio_evidencia: !!state.audioEvidenceBlob,
-    tiene_foto: !!state.fotoBlob,
-    foto: fotoBase64,
-    audio: audioBase64,
-    audio_referencia: audioVozBase64,
-    audio_evidencia: audioEvidenceBase64,
-    estado: 'recibido', // Recibido -> Asignado -> En camino -> Atendido
-    unidad_asignada: null,
-    unidad: null,       // Nombre de patrulla asignada (será actualizada por operador)
-    unidad_codigo: null,
-    eta_minutos: null,
-    observaciones: '',
-  };
-
   try {
+    const conversionesCorrectas = await Promise.all([
+      fotoDataUrlPromise,
+      audioVozDataUrlPromise,
+      audioEvidenceDataUrlPromise
+    ]);
+    if (conversionesCorrectas.includes(false)) {
+      throw new Error('No se pudieron preparar todas las evidencias. Vuelve a adjuntarlas antes de enviar.');
+    }
+    if (!supabaseClient) {
+      throw new Error('No se pudo conectar con Supabase para enviar el reporte.');
+    }
+
+    const { data: authData, error: authError } = await supabaseClient.auth.getUser();
+    if (authError) throw authError;
+    const ciudadanoDni = state.dniActual || authData.user?.app_metadata?.dni;
+    if (!ciudadanoDni || authData.user?.app_metadata?.role !== 'ciudadano') {
+      throw new Error('Tu sesión ciudadana venció. Inicia sesión nuevamente antes de enviar.');
+    }
+    if (!Number.isFinite(state.lat) || !Number.isFinite(state.lng)) {
+      throw new Error('Confirma una ubicación válida antes de enviar el reporte.');
+    }
+
+    const tipo = CATALOGO_TIPOS[state.tipoSeleccionado] ? state.tipoSeleccionado : 'auxilio';
+    const infoTipo = CATALOGO_TIPOS[tipo];
+    const inputReferencia = document.getElementById('ref-texto');
+    state.referenciaTexto = inputReferencia?.value.trim() || state.referenciaTexto.trim();
+    const nuevoIncidente = {
+      ciudadano_dni: ciudadanoDni,
+      tipo,
+      prioridad: infoTipo.prioridad,
+      ubicacion: {
+        lat: state.lat,
+        lng: state.lng,
+        direccionAprox: 'Distrito de Chorrillos, Lima'
+      },
+      referencia: state.referenciaTexto,
+      tiene_audio: !!(state.audioBlob || state.audioEvidenceBlob),
+      tiene_audio_evidencia: !!state.audioEvidenceBlob,
+      tiene_foto: !!state.fotoBlob,
+      foto: fotoBase64,
+      audio: audioBase64,
+      audio_referencia: audioVozBase64,
+      audio_evidencia: audioEvidenceBase64,
+      estado: 'recibido',
+      unidad_asignada: null,
+      unidad: null,
+      unidad_codigo: null,
+      eta_minutos: null,
+      observaciones: ''
+    };
+
     const { data, error } = await supabaseClient
       .from('incidentes')
-      .insert(nuevoIncidente)
+      .insert([nuevoIncidente])
       .select('ticket')
       .single();
     if (error) throw error;
+    if (!data?.ticket) throw new Error('Supabase no devolvió el ticket del nuevo incidente.');
     state.ticketActual = data.ticket;
+    state.dniActual = ciudadanoDni;
+
+    const ticketNumeroEl = document.getElementById('ticket-numero');
+    if (ticketNumeroEl) ticketNumeroEl.textContent = state.ticketActual;
+    mostrarPantalla('screen-success');
+    vibrar([100, 60, 200]);
+    hablarTexto('¡Serenazgo en camino! Tu solicitud ha sido recibida con el código ' + state.ticketActual);
   } catch (error) {
     console.error('No se pudo guardar el reporte en Supabase:', error);
     showToast(error.message || 'No se pudo guardar el reporte. Inténtalo nuevamente.', 'error');
+  } finally {
     state.envioEnCurso = false;
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<i class="bi bi-shield-fill-exclamation me-1"></i> ENVIAR REPORTE';
     }
-    return;
   }
-
-  const ticket = state.ticketActual;
-  setTimeout(() => {
-    const ticketNumeroEl = document.getElementById('ticket-numero');
-    if (ticketNumeroEl) ticketNumeroEl.textContent = ticket;
-
-    mostrarPantalla('screen-success');
-    vibrar([100, 60, 200]);
-    hablarTexto('¡Serenazgo en camino! Tu solicitud ha sido recibida con el código ' + ticket);
-
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-shield-fill-exclamation me-1"></i> ENVIAR REPORTE';
-    }
-    state.envioEnCurso = false;
-  }, 400);
 }
 
 // ─── Seguimiento en Tiempo Real (RF-04, RF-05) ───────────────────────────────
@@ -959,8 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnRefTexto && containerRefTexto) {
     btnRefTexto.addEventListener('click', () => {
-      containerRefTexto.classList.toggle('d-none');
-      containerRefTexto.classList.toggle('hidden');
+      containerRefTexto.classList.remove('hidden', 'd-none');
       if (inputRefTexto) inputRefTexto.focus();
     });
   }
