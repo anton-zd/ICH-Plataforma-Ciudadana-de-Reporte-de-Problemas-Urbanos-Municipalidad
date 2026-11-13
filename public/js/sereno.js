@@ -1,22 +1,32 @@
 /**
  * public/js/sereno.js
  * Lógica Frontend del Rol Serenazgo en Campo — Sistema Inclusivo de Atención
- * Recepción en Tiempo Real de Asignaciones en localStorage ('cases=[]')
+ * Recepción en Tiempo Real de Asignaciones desde Supabase
  * Flujo Táctico: Asignado -> En Camino -> Cierre con Observaciones (RF-07)
  */
 
 'use strict';
 
+const supabaseUrl = 'https://nazqgqiyluoqytgwyoga.supabase.co';
+const supabaseKey = 'sb_publishable_CdzSpjn1Me7fxnKJ7VOCzQ_tWzoLYVu';
+const supabaseClient = window.supabase
+  ? window.supabase.createClient(supabaseUrl, supabaseKey, {
+    auth: { storageKey: 'serenazgo-sereno-auth' }
+  })
+  : null;
+
 // ─── Estado Local del Agente de Serenazgo ────────────────────────────────────
 const serenoState = {
   agenteCodigo: 'SR-01', // Código de unidad de patrulla asignada
   agenteNombre: 'Patrulla SR-01 (Centro - Terán)',
+  userId: null,
   incidenteActivoTicket: null,
   mapaSereno: null,
   markerAgente: null,
   markerIncidente: null,
   pollingInterval: null,
   posicionAgente: { lat: -12.1620, lng: -77.0225 }, // Posición base en Chorrillos
+  lastLoadError: null,
 };
 
 // Configuración de iconos por tipo de emergencia
@@ -27,26 +37,6 @@ const ICONOS_EMERGENCIA = {
   auxilio:   '🆘'
 };
 
-// ─── Lectura y Escritura en localStorage ('cases=[]') ────────────────────────
-
-function leerCasosStorage() {
-  try {
-    const raw = localStorage.getItem('cases');
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Error al leer cases en sereno:', e);
-    return [];
-  }
-}
-
-function guardarCasosStorage(casos) {
-  try {
-    localStorage.setItem('cases', JSON.stringify(casos));
-  } catch (e) {
-    console.error('Error al guardar cases en sereno:', e);
-  }
-}
-
 // ─── Notificaciones Toast y Vibración ────────────────────────────────────────
 
 function mostrarToast(msg, tipo = 'info') {
@@ -55,7 +45,11 @@ function mostrarToast(msg, tipo = 'info') {
 
   const t = document.createElement('div');
   t.className = `toast ${tipo}`;
-  t.innerHTML = `<span>${tipo === 'success' ? '✅' : tipo === 'error' ? '❌' : 'ℹ️'}</span><span>${msg}</span>`;
+  const icon = document.createElement('span');
+  icon.textContent = tipo === 'success' ? '✅' : tipo === 'error' ? '❌' : 'ℹ️';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  t.append(icon, text);
   container.appendChild(t);
 
   setTimeout(() => t.remove(), 3500);
@@ -69,18 +63,30 @@ function vibrarAlerta(patron = [120, 60, 120]) {
 
 // ─── Monitoreo de Asignación en Tiempo Real ──────────────────────────────────
 
-function verificarAsignacionesAgente() {
-  const cases = leerCasosStorage();
-
-  // Buscar si existe un incidente asignado a esta patrulla (SR-01) o en camino
-  const miCaso = cases.find(c => {
-    const correspondeAUsuario = (
-      c.unidad_codigo === serenoState.agenteCodigo ||
-      (c.unidad && c.unidad.includes(serenoState.agenteCodigo))
-    );
-    const estaEnProgreso = (c.estado === 'asignado' || c.estado === 'en_camino');
-    return correspondeAUsuario && estaEnProgreso;
-  });
+async function verificarAsignacionesAgente() {
+  if (!supabaseClient) {
+    mostrarToast('Configura Supabase antes de consultar los despachos.', 'error');
+    return;
+  }
+  const { data: miCaso, error } = await supabaseClient
+    .from('incidentes')
+    .select()
+    .eq('unidad_asignada', serenoState.agenteCodigo)
+    .neq('estado', 'atendido')
+    .neq('estado', 'cancelado')
+    .order('timestamp', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error('No se pudo consultar la asignación del agente:', error);
+    if (serenoState.lastLoadError !== error.message) {
+      mostrarToast(error.message || 'No se pudo consultar la asignación.', 'error');
+      serenoState.lastLoadError = error.message;
+    }
+    return;
+  }
+  serenoState.lastLoadError = null;
+  const cases = miCaso ? [miCaso] : [];
 
   if (miCaso) {
     renderizarEmergenciaAsignada(miCaso);
@@ -296,21 +302,26 @@ function actualizarMapaSerenazgo(latIncidente, lngIncidente, ticket) {
 
 // ─── Acciones de Despacho (En Camino / Atendido) ──────────────────────────────
 
-function marcarEnCamino() {
+async function marcarEnCamino() {
   if (!serenoState.incidenteActivoTicket) return;
 
-  const cases = leerCasosStorage();
-  const idx = cases.findIndex(c => c.ticket === serenoState.incidenteActivoTicket);
-
-  if (idx !== -1) {
-    cases[idx].estado = 'en_camino';
-    guardarCasosStorage(cases);
-
+  try {
+    const { error } = await supabaseClient
+      .from('incidentes')
+      .update({ estado: 'en_camino', updated_at: new Date().toISOString() })
+      .eq('ticket', serenoState.incidenteActivoTicket)
+      .eq('unidad_asignada', serenoState.agenteCodigo)
+      .eq('estado', 'asignado')
+      .select('ticket')
+      .single();
+    if (error) throw error;
     mostrarToast('🚔 Marcado como "En Camino". Notificado a la Central y al Ciudadano', 'info');
     vibrarAlerta([80]);
+    await verificarAsignacionesAgente();
+  } catch (error) {
+    console.error('No se pudo actualizar el estado del incidente:', error);
+    mostrarToast(error.message || 'No se pudo cambiar el estado a En Camino.', 'error');
   }
-
-  verificarAsignacionesAgente();
 }
 
 function abrirModalCierreSereno() {
@@ -320,31 +331,40 @@ function abrirModalCierreSereno() {
   if (modal) modal.classList.remove('hidden');
 }
 
-function confirmarCierreSereno() {
+async function confirmarCierreSereno() {
   if (!serenoState.incidenteActivoTicket) return;
 
-  const cases = leerCasosStorage();
-  const idx = cases.findIndex(c => c.ticket === serenoState.incidenteActivoTicket);
-
-  if (idx !== -1) {
-    const estadoSelect = document.getElementById('cierre-sereno-estado');
-    const obsText = document.getElementById('cierre-sereno-obs');
-
-    cases[idx].estado = estadoSelect ? estadoSelect.value : 'atendido';
-    cases[idx].observaciones = obsText && obsText.value.trim() ? obsText.value.trim() : 'Emergencia atendida y resuelta en territorio por agente SR-01.';
-    cases[idx].atendido_at = new Date().toISOString();
-
-    guardarCasosStorage(cases);
+  const estadoSelect = document.getElementById('cierre-sereno-estado');
+  const obsText = document.getElementById('cierre-sereno-obs');
+  const estado = estadoSelect ? estadoSelect.value : 'atendido';
+  const actualizadoAt = new Date().toISOString();
+  try {
+    const { error } = await supabaseClient
+      .from('incidentes')
+      .update({
+        estado,
+        observaciones: obsText && obsText.value.trim()
+          ? obsText.value.trim()
+          : `Emergencia atendida y resuelta por la unidad ${serenoState.agenteCodigo}.`,
+        atendido_at: actualizadoAt,
+        updated_at: actualizadoAt
+      })
+      .eq('ticket', serenoState.incidenteActivoTicket)
+      .eq('unidad_asignada', serenoState.agenteCodigo)
+      .select('ticket')
+      .single();
+    if (error) throw error;
     mostrarToast(`✅ Emergencia ${serenoState.incidenteActivoTicket} cerrada satisfactoriamente`, 'success');
     vibrarAlerta([100, 50, 150]);
+  } catch (error) {
+    console.error('No se pudo cerrar el incidente:', error);
+    mostrarToast(error.message || 'No se pudo guardar el cierre del incidente.', 'error');
+    return;
   }
 
-  // Cerrar modal
   const modal = document.getElementById('modal-cierre-sereno');
   if (modal) modal.classList.add('hidden');
-
-  // Limpiar estado y volver a Disponible
-  renderizarSinAsignacion();
+  await verificarAsignacionesAgente();
 }
 
 // ─── Lista de Emergencias del Sector ─────────────────────────────────────────
@@ -355,24 +375,35 @@ function renderizarSectorList(cases) {
 
   const activos = cases.filter(c => c.estado !== 'atendido' && c.estado !== 'cancelado');
   if (activos.length === 0) {
-    container.innerHTML = '<div class="text-center py-4 text-muted small">Sin incidentes activos en tu sector.</div>';
+    container.innerHTML = '<div class="text-center py-4 text-muted small">Sin despachos activos para tu unidad.</div>';
     return;
   }
 
   container.innerHTML = activos.map(c => {
     const esMio = (c.ticket === serenoState.incidenteActivoTicket);
     const esAlta = (c.tipo === 'violencia' || c.tipo === 'auxilio');
+    const tipo = escaparHTML(c.tipo);
     return `
       <div class="sereno-inc-card ${esAlta ? 'alta' : ''}">
         <div class="sereno-inc-icon">${ICONOS_EMERGENCIA[c.tipo] || '🚨'}</div>
         <div class="sereno-inc-info">
-          <div class="inc-tipo">${c.tipo.toUpperCase()} ${esMio ? '<span class="badge bg-primary ms-1">MI ASIGNACIÓN</span>' : ''}</div>
-          <div class="inc-ticket">${c.ticket}</div>
-          <div class="inc-ref">${c.referencia || 'Sin referencia'}</div>
+          <div class="inc-tipo">${tipo.toUpperCase()} ${esMio ? '<span class="badge bg-primary ms-1">MI ASIGNACIÓN</span>' : ''}</div>
+          <div class="inc-ticket">${escaparHTML(c.ticket)}</div>
+          <div class="inc-ref">${escaparHTML(c.referencia || 'Sin referencia')}</div>
         </div>
-        <span class="badge-status badge-${c.estado}">${c.estado}</span>
+        <span class="badge-status badge-${escaparHTML(c.estado)}">${escaparHTML(c.estado)}</span>
       </div>`;
   }).join('');
+}
+
+function escaparHTML(valor) {
+  return String(valor ?? '').replace(/[&<>"']/g, caracter => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[caracter]);
 }
 
 // ─── Control de Pantallas Móviles de Serenazgo ───────────────────────────────
@@ -396,33 +427,59 @@ function cambiarPantallaSereno(screenId) {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // 1. Login Simulado de Agente
+  // 1. Inicio de sesión de Agente con Supabase Auth
   const formLogin = document.getElementById('form-login-sereno');
   if (formLogin) {
-    formLogin.addEventListener('submit', (e) => {
+    formLogin.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const username = document.getElementById('sereno-usuario')?.value.trim() || '';
+      const password = document.getElementById('sereno-password')?.value || '';
+      const errorEl = document.getElementById('sereno-login-error');
+      const button = formLogin.querySelector('button[type="submit"]');
+      if (errorEl) errorEl.classList.add('hidden');
+      if (button) button.disabled = true;
 
-      // Ocultar login y mostrar interfaz de campo
-      document.getElementById('screen-login-sereno')?.classList.remove('active');
-      document.getElementById('screen-login-sereno')?.classList.add('hidden');
-      document.getElementById('sereno-header')?.classList.remove('hidden');
-      document.getElementById('sereno-bottom-nav')?.classList.remove('hidden');
+      try {
+        if (!supabaseClient) {
+          throw new Error('No se pudo cargar la librería cliente de Supabase.');
+        }
+        const email = username.includes('@') ? username : `${username}@personal.serenazgo.invalid`;
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        const metadata = data.user?.app_metadata || {};
+        if (metadata.role !== 'sereno' || !metadata.unit_code) {
+          await supabaseClient.auth.signOut();
+          throw new Error('Esta cuenta no tiene permisos de unidad de campo.');
+        }
 
-      // Nombre del agente
-      const nombreEl = document.getElementById('sereno-agente-nombre');
-      const perfilNombre = document.getElementById('perfil-nombre');
-      if (nombreEl) nombreEl.textContent = 'Patrulla SR-01 (Centro)';
-      if (perfilNombre) perfilNombre.textContent = 'Agente Quispe (SR-01)';
+        serenoState.agenteCodigo = metadata.unit_code;
+        serenoState.agenteNombre = metadata.nombre || `Patrulla ${metadata.unit_code}`;
+        serenoState.userId = data.user.id;
 
-      // Activar pantalla principal de despacho
-      cambiarPantallaSereno('screen-asignacion');
+        document.getElementById('screen-login-sereno')?.classList.remove('active');
+        document.getElementById('screen-login-sereno')?.classList.add('hidden');
+        document.getElementById('sereno-header')?.classList.remove('hidden');
+        document.getElementById('sereno-bottom-nav')?.classList.remove('hidden');
 
-      // Escuchar asignaciones en tiempo real
-      verificarAsignacionesAgente();
+        const nombreEl = document.getElementById('sereno-agente-nombre');
+        const perfilNombre = document.getElementById('perfil-nombre');
+        if (nombreEl) nombreEl.textContent = serenoState.agenteNombre;
+        if (perfilNombre) perfilNombre.textContent = `${serenoState.agenteNombre} (${serenoState.agenteCodigo})`;
 
-      // Iniciar polling cada 2 segundos
-      if (serenoState.pollingInterval) clearInterval(serenoState.pollingInterval);
-      serenoState.pollingInterval = setInterval(verificarAsignacionesAgente, 2000);
+        cambiarPantallaSereno('screen-asignacion');
+        await verificarAsignacionesAgente();
+
+        if (serenoState.pollingInterval) clearInterval(serenoState.pollingInterval);
+        serenoState.pollingInterval = setInterval(verificarAsignacionesAgente, 2000);
+      } catch (error) {
+        console.error('No se pudo iniciar sesión como agente:', error);
+        if (errorEl) {
+          errorEl.textContent = error.message || 'No se pudo iniciar sesión.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
   }
 
@@ -447,17 +504,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 6. Logout
-  document.getElementById('btn-logout-sereno')?.addEventListener('click', () => {
+  document.getElementById('btn-logout-sereno')?.addEventListener('click', async () => {
     if (serenoState.pollingInterval) clearInterval(serenoState.pollingInterval);
+    if (supabaseClient) {
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) console.error('No se pudo cerrar la sesión de agente:', error);
+    }
     location.reload();
   });
 
-  // 7. Detección en tiempo real de despachos del operador vía evento 'storage'
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'cases') {
-      verificarAsignacionesAgente();
-    }
-  });
-
-  console.log('🚔 Módulo Serenazgo en Campo Inicializado. Conectado a localStorage ("cases=[]").');
+  if (!supabaseClient) {
+    console.error('No se pudo cargar la librería cliente de Supabase.');
+  }
+  console.log('Módulo Serenazgo en Campo inicializado con persistencia Supabase.');
 });

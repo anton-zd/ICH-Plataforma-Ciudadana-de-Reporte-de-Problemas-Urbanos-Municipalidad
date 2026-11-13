@@ -6,10 +6,13 @@ node_modules/
 __pycache__/
 *.py[cod]
 
-serenazgo.db
-serenazgo.db-*
+*.db
+*.db-*
 *.sqlite
 *.sqlite3
 
 public/uploads/
+
+.supabase/
+supabase/.temp/
 

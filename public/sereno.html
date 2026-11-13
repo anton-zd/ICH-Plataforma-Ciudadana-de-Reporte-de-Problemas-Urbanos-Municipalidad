@@ -183,8 +183,8 @@
     <nav class="demo-role-links">
       <a href="/" class="demo-role-link">🏠 Inicio Portal</a>
       <a href="/ciudadano.html" class="demo-role-link">👤 Reporte Móvil</a>
-      <a href="/dashboard" class="demo-role-link">🖥️ Operador Central</a>
-      <a href="/sereno" class="demo-role-link active" aria-current="page">🚔 Serenazgo Campo</a>
+      <a href="/dashboard.html" class="demo-role-link">🖥️ Operador Central</a>
+      <a href="/sereno.html" class="demo-role-link active" aria-current="page">🚔 Serenazgo Campo</a>
     </nav>
   </aside>
 
@@ -204,11 +204,11 @@
         <form id="form-login-sereno" class="text-start">
           <div class="mb-3">
             <label for="sereno-usuario" class="form-label fw-bold small text-muted">Código de Agente / Usuario</label>
-            <input type="text" id="sereno-usuario" class="form-control py-2" placeholder="sereno1" value="sereno1" required autocomplete="username">
+            <input type="text" id="sereno-usuario" class="form-control py-2" placeholder="Usuario de unidad" required autocomplete="username">
           </div>
           <div class="mb-3">
             <label for="sereno-password" class="form-label fw-bold small text-muted">Contraseña</label>
-            <input type="password" id="sereno-password" class="form-control py-2" placeholder="••••••••" value="sereno2024" required autocomplete="current-password">
+            <input type="password" id="sereno-password" class="form-control py-2" placeholder="Contraseña" required autocomplete="current-password">
           </div>
 
           <div class="alert alert-danger py-2 small hidden" id="sereno-login-error" role="alert">
@@ -221,7 +221,7 @@
         </form>
 
         <div class="mt-4 pt-3 border-top small text-muted">
-          Credenciales demo: <code>sereno1</code> / <code>sereno2024</code> (Unidad SR-01)
+          Acceso exclusivo para unidades autorizadas.
         </div>
       </div>
     </section>
@@ -419,6 +419,7 @@
   <!-- Leaflet & JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/js/sereno.js"></script>
 </body>
 </html>

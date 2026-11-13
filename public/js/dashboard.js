@@ -1,11 +1,19 @@
 /**
  * public/js/dashboard.js
  * Lógica Frontend del Rol Operador Central — Sistema Inclusivo de Serenazgo
- * Gestión en Tiempo Real de Incidentes en localStorage ('cases=[]')
+ * Gestión en Tiempo Real de Incidentes en Supabase
  * Regla de Negocio RN-01: Priorización automática de Violencia y Auxilio en la cola
  */
 
 'use strict';
+
+const supabaseUrl = 'https://nazqgqiyluoqytgwyoga.supabase.co';
+const supabaseKey = 'sb_publishable_CdzSpjn1Me7fxnKJ7VOCzQ_tWzoLYVu';
+const supabaseClient = window.supabase
+  ? window.supabase.createClient(supabaseUrl, supabaseKey, {
+    auth: { storageKey: 'serenazgo-operador-auth' }
+  })
+  : null;
 
 // ─── Estado Local del Operador ───────────────────────────────────────────────
 const dashboardState = {
@@ -17,6 +25,9 @@ const dashboardState = {
   markersList: [],
   pollingInterval: null,
   chartInstances: {},
+  casos: [],
+  lastLoadError: null,
+  realtimeChannel: null,
 };
 
 // Flota de Unidades de Serenazgo de Chorrillos disponibles para despacho
@@ -32,26 +43,88 @@ const TIPO_CONFIG = {
   violencia: { icon: '👊', badgeClass: 'badge-alta', bgClass: 'tipo-bg-violencia', label: 'Violencia' },
   robo:      { icon: '🦹', badgeClass: 'badge-normal', bgClass: 'tipo-bg-robo', label: 'Robo' },
   accidente: { icon: '🚗', badgeClass: 'badge-normal', bgClass: 'tipo-bg-accidente', label: 'Accidente' },
-  auxilio:   { icon: '🆘', badgeClass: 'badge-alta', bgClass: 'tipo-bg-auxilio', label: 'Auxilio' }
+  auxilio:   { icon: '🆘', badgeClass: 'badge-alta', bgClass: 'tipo-bg-auxilio', label: 'Auxilio' },
+  otros:     { icon: '📋', badgeClass: 'badge-normal', bgClass: 'bg-light', label: 'Otros' }
 };
 
-// ─── Lectura y Escritura en localStorage ('cases=[]') ────────────────────────
+// ─── Carga de Incidentes desde Supabase ──────────────────────────────────────
 
 function obtenerCasos() {
+  return dashboardState.casos;
+}
+
+function escaparHTML(valor) {
+  return String(valor ?? '').replace(/[&<>"']/g, caracter => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[caracter]);
+}
+
+async function cargarCasos() {
+  if (!supabaseClient) {
+    throw new Error('No se pudo cargar la librería cliente de Supabase.');
+  }
+  const { data, error } = await supabaseClient
+    .from('incidentes')
+    .select()
+    .neq('estado', 'cancelado')
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  dashboardState.casos = data || [];
+}
+
+async function actualizarDatosDashboard() {
   try {
-    const raw = localStorage.getItem('cases');
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Error al leer cases en dashboard:', e);
-    return [];
+    await cargarCasos();
+    dashboardState.lastLoadError = null;
+    renderizarDashboard();
+    if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
+      renderizarEstadisticas();
+    }
+  } catch (error) {
+    console.error('No se pudieron cargar los incidentes desde Supabase:', error);
+    if (dashboardState.lastLoadError !== error.message) {
+      notify(error.message || 'No se pudieron cargar los incidentes.', 'error');
+      dashboardState.lastLoadError = error.message;
+    }
   }
 }
 
-function guardarCasos(casos) {
-  try {
-    localStorage.setItem('cases', JSON.stringify(casos));
-  } catch (e) {
-    console.error('Error al guardar cases en dashboard:', e);
+async function suscribirNuevosIncidentes() {
+  if (!supabaseClient) return;
+  await desuscribirIncidentes();
+
+  dashboardState.realtimeChannel = supabaseClient
+    .channel('schema-db-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'incidentes' },
+      payload => {
+        if (payload.eventType === 'INSERT') {
+          console.log('Nuevo incidente detectado:', payload.new);
+          notify(`¡Nueva alerta entrante! Ticket: ${payload.new.ticket}`, 'error');
+        }
+        void actualizarDatosDashboard();
+      }
+    )
+    .subscribe((status, error) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.error('Falló la suscripción Realtime de incidentes:', error);
+        notify('Se perdió la conexión en tiempo real. Se intentará reconectar.', 'error');
+      }
+    });
+}
+
+async function desuscribirIncidentes() {
+  const channel = dashboardState.realtimeChannel;
+  dashboardState.realtimeChannel = null;
+  if (!channel || !supabaseClient) return;
+  const status = await supabaseClient.removeChannel(channel);
+  if (status !== 'ok') {
+    console.warn('No se pudo cerrar el canal Realtime del dashboard:', status);
   }
 }
 
@@ -62,7 +135,11 @@ function notify(msg, tipo = 'info') {
 
   const t = document.createElement('div');
   t.className = `toast ${tipo}`;
-  t.innerHTML = `<span>${tipo === 'success' ? '✅' : tipo === 'error' ? '❌' : 'ℹ️'}</span><span>${msg}</span>`;
+  const icon = document.createElement('span');
+  icon.textContent = tipo === 'success' ? '✅' : tipo === 'error' ? '❌' : 'ℹ️';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  t.append(icon, text);
   container.appendChild(t);
 
   setTimeout(() => t.remove(), 3500);
@@ -128,37 +205,42 @@ function renderizarDashboard() {
     const esAlta = (caso.tipo === 'violencia' || caso.tipo === 'auxilio');
     const borderClass = esAlta ? 'prioridad-alta' : 'prioridad-normal';
     const hora = caso.timestamp ? new Date(caso.timestamp).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : 'Reciente';
+    const ticket = escaparHTML(caso.ticket);
+    const tipo = escaparHTML(cfg.label);
+    const estado = escaparHTML(caso.estado);
+    const referencia = escaparHTML(caso.referencia);
+    const unidad = escaparHTML(caso.unidad);
 
     return `
-      <article class="incident-card ${borderClass}" data-ticket="${caso.ticket}" role="listitem">
+      <article class="incident-card ${borderClass}" data-ticket="${ticket}" role="listitem">
         <div class="d-flex align-items-center gap-3 flex-grow-1 min-w-0">
           <div class="inc-tipo-icon ${cfg.bgClass}" aria-hidden="true">
             ${cfg.icon}
           </div>
           <div class="inc-info">
             <div class="inc-header mb-1">
-              <span class="inc-ticket">${caso.ticket}</span>
+              <span class="inc-ticket">${ticket}</span>
               ${esAlta ? '<span class="badge-status badge-alta"><i class="bi bi-lightning-fill"></i> Prioridad Alta</span>' : '<span class="badge-status badge-normal">Normal</span>'}
-              <span class="badge-status badge-${caso.estado}">${caso.estado.replace('_', ' ')}</span>
+              <span class="badge-status badge-${estado}">${estado.replace('_', ' ')}</span>
               <span class="small text-muted ms-auto"><i class="bi bi-clock me-1"></i>${hora}</span>
             </div>
-            <div class="inc-tipo">${cfg.label}</div>
+            <div class="inc-tipo">${tipo}</div>
             <div class="inc-loc text-truncate">
               <i class="bi bi-geo-alt-fill text-danger me-1"></i>
               Lat: ${caso.ubicacion?.lat ? caso.ubicacion.lat.toFixed(4) : '-12.1611'}, Lng: ${caso.ubicacion?.lng ? caso.ubicacion.lng.toFixed(4) : '-77.0210'}
-              ${caso.referencia ? ` · <span class="text-dark fw-semibold">"${caso.referencia}"</span>` : ''}
+              ${referencia ? ` · <span class="text-dark fw-semibold">"${referencia}"</span>` : ''}
             </div>
-            ${caso.unidad ? `<div class="small text-primary fw-bold mt-1"><i class="bi bi-car-front-fill me-1"></i>Despachado a: ${caso.unidad} (ETA: ${caso.eta_minutos || 3} min)</div>` : ''}
+            ${unidad ? `<div class="small text-primary fw-bold mt-1"><i class="bi bi-car-front-fill me-1"></i>Despachado a: ${unidad} (ETA: ${caso.eta_minutos || 3} min)</div>` : ''}
           </div>
         </div>
 
         <div class="inc-actions d-flex gap-2">
           ${caso.estado === 'recibido' ? `
-            <button class="btn btn-touch-primary btn-asignar" onclick="abrirModalAsignacion('${caso.ticket}')">
+            <button class="btn btn-touch-primary btn-asignar" data-action="assign" data-ticket="${ticket}">
               <i class="bi bi-send-fill me-1"></i> Despachar
             </button>` : ''}
           ${caso.estado === 'asignado' || caso.estado === 'en_camino' ? `
-            <button class="btn btn-outline-success btn-sm px-3 fw-bold rounded-pill" onclick="abrirModalCierre('${caso.ticket}')" style="min-height: 40px;">
+            <button class="btn btn-outline-success btn-sm px-3 fw-bold rounded-pill" data-action="close" data-ticket="${ticket}" style="min-height: 40px;">
               <i class="bi bi-check2-circle me-1"></i> Cerrar
             </button>` : ''}
         </div>
@@ -244,7 +326,17 @@ window.abrirModalAsignacion = function(ticket) {
   const latInc = caso.ubicacion?.lat || -12.1611;
   const lngInc = caso.ubicacion?.lng || -77.0210;
 
-  const unidadesConDistancia = UNIDADES_DISPONIBLES.map(u => {
+  const unidadesOcupadas = new Set(obtenerCasos()
+    .filter(incidente => !['atendido', 'cancelado'].includes(incidente.estado))
+    .map(incidente => incidente.unidad_asignada || incidente.unidad_codigo)
+    .filter(Boolean));
+  const unidadesLibres = UNIDADES_DISPONIBLES.filter(unidad => !unidadesOcupadas.has(unidad.id));
+  if (unidadesLibres.length === 0) {
+    notify('No hay unidades disponibles para despachar.', 'error');
+    return;
+  }
+
+  const unidadesConDistancia = unidadesLibres.map(u => {
     const dist = calcularDistanciaKm(latInc, lngInc, u.lat, u.lng);
     const etaMin = Math.max(1, Math.round((dist / 30) * 60)); // ETA a 30 km/h
     return { ...u, distanciaKm: dist, etaMin: etaMin };
@@ -297,26 +389,40 @@ window.seleccionarUnidadModal = function(unidadId) {
   if (btnConfirmar) btnConfirmar.disabled = false;
 };
 
-function confirmarDespacho() {
+async function confirmarDespacho() {
   if (!dashboardState.incidenteSeleccionado || !dashboardState.unidadSeleccionadaId) return;
 
-  const cases = obtenerCasos();
   const ticket = dashboardState.incidenteSeleccionado.ticket;
-  const idx = cases.findIndex(c => c.ticket === ticket);
-
-  if (idx !== -1) {
-    const unidad = UNIDADES_DISPONIBLES.find(u => u.id === dashboardState.unidadSeleccionadaId);
-    cases[idx].estado = 'asignado';
-    cases[idx].unidad = unidad ? `${unidad.codigo} - ${unidad.nombre}` : 'Patrulla Asignada';
-    cases[idx].unidad_codigo = unidad ? unidad.codigo : 'SR-01';
-    cases[idx].eta_minutos = Math.floor(Math.random() * 3) + 2; // 2 a 4 minutos
-
-    guardarCasos(cases);
-    notify(`Patrulla ${unidad ? unidad.codigo : ''} despachada a ${ticket}`, 'success');
+  const unidad = UNIDADES_DISPONIBLES.find(u => u.id === dashboardState.unidadSeleccionadaId);
+  if (!unidad) {
+    notify('La unidad seleccionada ya no está disponible.', 'error');
+    return;
+  }
+  try {
+    const { error } = await supabaseClient
+      .from('incidentes')
+      .update({
+        estado: 'asignado',
+        unidad_asignada: unidad.id,
+        unidad: `${unidad.codigo} - ${unidad.nombre}`,
+        unidad_codigo: unidad.codigo,
+        eta_minutos: Math.floor(Math.random() * 3) + 2,
+        updated_at: new Date().toISOString()
+      })
+      .eq('ticket', ticket)
+      .eq('estado', 'recibido')
+      .select('ticket')
+      .single();
+    if (error) throw error;
+    notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
+  } catch (error) {
+    console.error('No se pudo asignar la unidad:', error);
+    notify(error.message || `No se pudo despachar el incidente ${ticket}.`, 'error');
+    return;
   }
 
   cerrarModal('modal-asignar');
-  renderizarDashboard();
+  await actualizarDatosDashboard();
 }
 
 // ─── Modal de Cierre de Emergencia ───────────────────────────────────────────
@@ -334,27 +440,36 @@ window.abrirModalCierre = function(ticket) {
   if (modal) modal.classList.remove('hidden');
 };
 
-function confirmarCierreIncidente() {
+async function confirmarCierreIncidente() {
   if (!dashboardState.incidenteSeleccionado) return;
 
-  const cases = obtenerCasos();
   const ticket = dashboardState.incidenteSeleccionado.ticket;
-  const idx = cases.findIndex(c => c.ticket === ticket);
-
-  if (idx !== -1) {
-    const estadoSelect = document.getElementById('cierre-estado');
-    const obsText = document.getElementById('cierre-observaciones');
-
-    cases[idx].estado = estadoSelect ? estadoSelect.value : 'atendido';
-    cases[idx].observaciones = obsText ? obsText.value : 'Cerrado por operador';
-    cases[idx].atendido_at = new Date().toISOString();
-
-    guardarCasos(cases);
+  const estadoSelect = document.getElementById('cierre-estado');
+  const obsText = document.getElementById('cierre-observaciones');
+  const estado = estadoSelect ? estadoSelect.value : 'atendido';
+  const actualizadoAt = new Date().toISOString();
+  try {
+    const { error } = await supabaseClient
+      .from('incidentes')
+      .update({
+        estado,
+        observaciones: obsText ? obsText.value : 'Cerrado por operador',
+        atendido_at: actualizadoAt,
+        updated_at: actualizadoAt
+      })
+      .eq('ticket', ticket)
+      .select('ticket')
+      .single();
+    if (error) throw error;
     notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
+  } catch (error) {
+    console.error('No se pudo cerrar el incidente:', error);
+    notify(error.message || `No se pudo cerrar el incidente ${ticket}.`, 'error');
+    return;
   }
 
   cerrarModal('modal-cierre');
-  renderizarDashboard();
+  await actualizarDatosDashboard();
 }
 
 function cerrarModal(modalId) {
@@ -423,7 +538,7 @@ function inicializarMapaTactico() {
 
     const marker = L.marker([lat, lng], { icon: customIcon })
       .addTo(dashboardState.mapaDashboard)
-      .bindPopup(`<strong>${c.ticket}</strong><br>Emergencia: ${c.tipo}<br>Estado: ${c.estado}`);
+      .bindPopup(`<strong>${escaparHTML(c.ticket)}</strong><br>Emergencia: ${escaparHTML(c.tipo)}<br>Estado: ${escaparHTML(c.estado)}`);
 
     dashboardState.markersList.push(marker);
   });
@@ -443,12 +558,12 @@ function renderizarHistorial() {
 
   tbody.innerHTML = cerrados.map(c => `
     <tr>
-      <td><code>${c.ticket}</code></td>
-      <td><strong>${c.tipo.toUpperCase()}</strong></td>
-      <td><span class="badge-status badge-${c.estado}">${c.estado}</span></td>
-      <td>${c.unidad || '—'}</td>
+      <td><code>${escaparHTML(c.ticket)}</code></td>
+      <td><strong>${escaparHTML(c.tipo.toUpperCase())}</strong></td>
+      <td><span class="badge-status badge-${escaparHTML(c.estado)}">${escaparHTML(c.estado)}</span></td>
+      <td>${escaparHTML(c.unidad || '—')}</td>
       <td class="small text-muted">${c.atendido_at ? new Date(c.atendido_at).toLocaleString('es-PE') : 'Reciente'}</td>
-      <td class="small">${c.observaciones || 'Atendido satisfactoriamente'}</td>
+      <td class="small">${escaparHTML(c.observaciones || 'Atendido satisfactoriamente')}</td>
     </tr>`).join('');
 }
 
@@ -473,7 +588,7 @@ function renderizarUnidadesGrid() {
           </div>
           <div class="h6 fw-bold mb-1">${u.nombre}</div>
           <small class="text-muted d-block">Sector: ${u.sector}</small>
-          ${estaOcupada ? `<small class="text-primary fw-bold mt-2 d-block">Atendiendo: ${ocupadasMap.get(u.codigo)}</small>` : ''}
+          ${estaOcupada ? `<small class="text-primary fw-bold mt-2 d-block">Atendiendo: ${escaparHTML(ocupadasMap.get(u.codigo))}</small>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -667,43 +782,65 @@ function renderizarEstadisticas() {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-  // 1. Login Simulado
+  // 1. Inicio de sesión de Operador con Supabase Auth
   const formLogin = document.getElementById('login-form');
   if (formLogin) {
-    formLogin.addEventListener('submit', (e) => {
+    formLogin.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const user = document.getElementById('login-usuario')?.value;
-      dashboardState.usuarioActual = user || 'operador1';
+      const errorEl = document.getElementById('login-error');
+      const button = document.getElementById('btn-login');
+      const username = document.getElementById('login-usuario')?.value.trim() || '';
+      const password = document.getElementById('login-password')?.value || '';
+      if (errorEl) errorEl.classList.add('hidden');
+      if (button) button.disabled = true;
 
-      document.getElementById('login-screen')?.classList.add('hidden');
-      document.getElementById('dashboard-app')?.classList.remove('hidden');
+      try {
+        if (!supabaseClient) throw new Error('No se pudo cargar la librería cliente de Supabase.');
+        const email = username.includes('@') ? username : `${username}@personal.serenazgo.invalid`;
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user?.app_metadata?.role !== 'operador') {
+          await supabaseClient.auth.signOut();
+          throw new Error('Esta cuenta no tiene permisos de operador.');
+        }
+        dashboardState.usuarioActual = data.user.id;
+        document.getElementById('login-screen')?.classList.add('hidden');
+        document.getElementById('dashboard-app')?.classList.remove('hidden');
 
-      const userLabel = document.getElementById('user-nombre');
-      if (userLabel) userLabel.textContent = 'Central Chorrillos';
+        const userLabel = document.getElementById('user-nombre');
+        if (userLabel) userLabel.textContent = data.user.app_metadata.nombre || 'Central Chorrillos';
 
-      // Renderizar cola de emergencias inmediatamente
-      renderizarDashboard();
-
-      // Iniciar polling continuo cada 2 segundos para sincronización en tiempo real
-      if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-      dashboardState.pollingInterval = setInterval(renderizarDashboard, 2000);
+        await actualizarDatosDashboard();
+        await suscribirNuevosIncidentes();
+        if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
+        dashboardState.pollingInterval = setInterval(actualizarDatosDashboard, 2000);
+      } catch (error) {
+        console.error('No se pudo iniciar sesión como operador:', error);
+        if (errorEl) {
+          errorEl.textContent = error.message || 'No se pudo iniciar sesión.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
   }
 
   // 2. Logout
-  document.getElementById('btn-logout')?.addEventListener('click', () => {
+  document.getElementById('btn-logout')?.addEventListener('click', async () => {
     if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
+    await desuscribirIncidentes();
+    if (supabaseClient) {
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) console.error('No se pudo cerrar la sesión de operador:', error);
+    }
     document.getElementById('dashboard-app')?.classList.add('hidden');
     document.getElementById('login-screen')?.classList.remove('hidden');
   });
 
   // 3. Botón de Actualizar manual
-  document.getElementById('btn-refresh')?.addEventListener('click', () => {
-    renderizarDashboard();
-    if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
-      renderizarEstadisticas();
-    }
-    notify('Cola de incidentes actualizada', 'info');
+  document.getElementById('btn-refresh')?.addEventListener('click', async () => {
+    await actualizarDatosDashboard();
   });
 
   // 4. Filtros de Estado
@@ -714,6 +851,14 @@ document.addEventListener('DOMContentLoaded', () => {
       dashboardState.filtroActual = btn.getAttribute('data-filter');
       renderizarDashboard();
     });
+  });
+
+  document.getElementById('incidents-list')?.addEventListener('click', event => {
+    const actionButton = event.target.closest('button[data-action][data-ticket]');
+    if (!actionButton) return;
+    const { action, ticket } = actionButton.dataset;
+    if (action === 'assign') window.abrirModalAsignacion(ticket);
+    else if (action === 'close') window.abrirModalCierre(ticket);
   });
 
   // 5. Navegación entre Módulos del Sidebar
@@ -737,15 +882,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-cerrar-modal-cierre')?.addEventListener('click', () => cerrarModal('modal-cierre'));
   document.getElementById('btn-cancelar-cierre')?.addEventListener('click', () => cerrarModal('modal-cierre'));
 
-  // 7. Detección en tiempo real de nuevos reportes vía evento 'storage'
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'cases') {
-      renderizarDashboard();
-      if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
-        renderizarEstadisticas();
-      }
-    }
-  });
-
-  console.log('🖥️ Módulo Operador Dashboard Inicializado. Sin datos de prueba iniciales.');
+  if (!supabaseClient) {
+    console.error('No se pudo cargar la librería cliente de Supabase.');
+  }
+  console.log('Módulo Operador Dashboard inicializado con persistencia Supabase.');
 });

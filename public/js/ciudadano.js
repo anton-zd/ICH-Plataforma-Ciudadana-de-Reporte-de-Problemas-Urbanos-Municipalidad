@@ -1,11 +1,19 @@
 /**
  * public/js/ciudadano.js
  * Lógica Frontend del Rol Ciudadano — Sistema Inclusivo de Atención de Serenazgo
- * Flujo Mobile-First en 3 Pasos, Almacenamiento 100% en localStorage ('cases=[]')
+ * Flujo Mobile-First en 3 Pasos, persistencia de reportes en Supabase
  * Cumplimiento con estándar de accesibilidad WCAG 2.1 AA
  */
 
 'use strict';
+
+const supabaseUrl = 'https://nazqgqiyluoqytgwyoga.supabase.co';
+const supabaseKey = 'sb_publishable_CdzSpjn1Me7fxnKJ7VOCzQ_tWzoLYVu';
+const supabaseClient = window.supabase
+  ? window.supabase.createClient(supabaseUrl, supabaseKey, {
+    auth: { storageKey: 'serenazgo-ciudadano-auth' }
+  })
+  : null;
 
 let fotoBase64 = null;
 let audioBase64 = null;
@@ -34,6 +42,7 @@ const state = {
   audioEvidenceStream: null,
   fotoBlob: null,
   ticketActual: null,
+  dniActual: null,
   mapaObj: null,
   markerObj: null,
   grabandoVoz: false,
@@ -76,35 +85,6 @@ const CATALOGO_TIPOS = {
   }
 };
 
-// ─── Funciones de Almacenamiento Local (localStorage: 'cases=[]') ────────────
-
-/**
- * Obtiene el arreglo `cases` de localStorage.
- * Si no existe, retorna un arreglo completamente vacío.
- */
-function getCasesFromStorage() {
-  try {
-    const raw = localStorage.getItem('cases');
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error('Error al leer cases de localStorage:', e);
-    return [];
-  }
-}
-
-/**
- * Guarda el arreglo `cases` actualizado en localStorage.
- */
-function saveCasesToStorage(casesArray) {
-  try {
-    localStorage.setItem('cases', JSON.stringify(casesArray));
-    return true;
-  } catch (e) {
-    console.error('Error al guardar cases en localStorage:', e);
-    return false;
-  }
-}
-
 function leerArchivoComoDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -124,16 +104,6 @@ function leerArchivoComoDataURL(file) {
 
 function actualizarAudioBase64() {
   audioBase64 = audioEvidenceBase64 || audioVozBase64;
-}
-
-/**
- * Genera un número de ticket secuencial: INC-{año}-{número con 3 dígitos}
- * Ejemplo: INC-2026-001
- */
-function generarTicketIncidente(totalExistente) {
-  const anio = new Date().getFullYear();
-  const correlativo = String(totalExistente + 1).padStart(3, '0');
-  return `INC-${anio}-${correlativo}`;
 }
 
 // ─── Control de Pantallas y Pasos (UI Mobile First) ──────────────────────────
@@ -208,7 +178,12 @@ function showToast(mensaje, tipo = 'info') {
   toast.setAttribute('aria-live', 'polite');
 
   const icono = tipo === 'success' ? '✅' : tipo === 'error' ? '❌' : 'ℹ️';
-  toast.innerHTML = `<span aria-hidden="true">${icono}</span><span>${mensaje}</span>`;
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = icono;
+  const text = document.createElement('span');
+  text.textContent = mensaje;
+  toast.append(icon, text);
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -237,7 +212,7 @@ function vibrar(patron = [60]) {
   }
 }
 
-async function autenticarCiudadano(endpoint, mensajeExito) {
+async function autenticarCiudadano(action, mensajeExito) {
   const dniInput = document.getElementById('ciudadano-dni');
   const pinInput = document.getElementById('ciudadano-pin');
   const errorEl = document.getElementById('ciudadano-login-error');
@@ -259,25 +234,26 @@ async function autenticarCiudadano(endpoint, mensajeExito) {
   if (registerButton) registerButton.disabled = true;
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dni, pin })
-    });
-    const result = await response.json();
-    if (!response.ok || !result.success) {
-      throw new Error(result.error || 'No se pudo validar el acceso.');
+    if (!supabaseClient) {
+      throw new Error('No se pudo cargar la librería cliente de Supabase.');
     }
+    const { data, error } = await supabaseClient.functions.invoke('ciudadanos-auth', {
+      body: { action, dni, pin }
+    });
+    if (error) throw new Error(data?.error || error.message || 'No se pudo validar el acceso.');
+    if (data?.error) throw new Error(data.error);
 
+    const { error: sessionError } = await supabaseClient.auth.setSession(data.session);
+    if (sessionError) throw sessionError;
+
+    state.dniActual = dni;
     mostrarPantalla('screen-home');
     document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
     showToast(mensajeExito, 'success');
   } catch (error) {
     console.error('Error de acceso ciudadano:', error);
     if (errorEl) {
-      errorEl.textContent = error instanceof TypeError
-        ? 'No se pudo conectar al servidor. Verifica que la aplicación esté iniciada.'
-        : error.message;
+      errorEl.textContent = error.message || 'No se pudo validar el acceso.';
       errorEl.classList.remove('hidden');
     }
   } finally {
@@ -640,7 +616,7 @@ function borrarGrabacionEvidencia() {
   }
 }
 
-// ─── Enviar Reporte de Emergencia (Paso 3 -> localStorage 'cases=[]') ─────────
+// ─── Enviar Reporte de Emergencia a Supabase ─────────────────────────────────
 
 async function procesarEnvioReporte() {
   if (state.envioEnCurso) return;
@@ -671,20 +647,21 @@ async function procesarEnvioReporte() {
     return;
   }
 
-  // 1. Leer cases actuales de localStorage
-  const cases = getCasesFromStorage();
+  if (!supabaseClient) {
+    showToast('No se pudo conectar con Supabase para enviar el reporte.', 'error');
+    state.envioEnCurso = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-shield-fill-exclamation me-1"></i> ENVIAR REPORTE';
+    }
+    return;
+  }
 
-  // 2. Generar correlativo de ticket (ej: INC-2026-001)
-  const ticket = generarTicketIncidente(cases.length);
-
-  // 3. Regla de Negocio RN-01: 'violencia' y 'auxilio' prioridad 1 (Alta)
+  // Regla de Negocio RN-01: 'violencia' y 'auxilio' prioridad 1 (Alta)
   const infoTipo = CATALOGO_TIPOS[state.tipoSeleccionado] || { prioridad: 2 };
   const prioridad = infoTipo.prioridad;
-
-  // 4. Construir objeto de emergencia JSON estandarizado
   const nuevoIncidente = {
-    id: 'inc-' + Date.now(),
-    ticket: ticket,
+    ciudadano_dni: state.dniActual,
     tipo: state.tipoSeleccionado || 'auxilio',
     prioridad: prioridad,
     ubicacion: {
@@ -693,25 +670,32 @@ async function procesarEnvioReporte() {
       direccionAprox: 'Distrito de Chorrillos, Lima'
     },
     referencia: state.referenciaTexto || '',
-    tieneAudio: !!(state.audioBlob || state.audioEvidenceBlob),
-    tieneAudioEvidencia: !!state.audioEvidenceBlob,
-    tieneFoto: !!state.fotoBlob,
+    tiene_audio: !!(state.audioBlob || state.audioEvidenceBlob),
+    tiene_audio_evidencia: !!state.audioEvidenceBlob,
+    tiene_foto: !!state.fotoBlob,
     foto: fotoBase64,
     audio: audioBase64,
     audio_referencia: audioVozBase64,
     audio_evidencia: audioEvidenceBase64,
     estado: 'recibido', // Recibido -> Asignado -> En camino -> Atendido
+    unidad_asignada: null,
     unidad: null,       // Nombre de patrulla asignada (será actualizada por operador)
     unidad_codigo: null,
     eta_minutos: null,
     observaciones: '',
-    timestamp: new Date().toISOString()
   };
 
-  // 5. Guardar en localStorage
-  cases.push(nuevoIncidente);
-  if (!saveCasesToStorage(cases)) {
-    showToast('No se pudo guardar el reporte. Las evidencias pueden exceder el espacio disponible del navegador.', 'error');
+  try {
+    const { data, error } = await supabaseClient
+      .from('incidentes')
+      .insert(nuevoIncidente)
+      .select('ticket')
+      .single();
+    if (error) throw error;
+    state.ticketActual = data.ticket;
+  } catch (error) {
+    console.error('No se pudo guardar el reporte en Supabase:', error);
+    showToast(error.message || 'No se pudo guardar el reporte. Inténtalo nuevamente.', 'error');
     state.envioEnCurso = false;
     if (btn) {
       btn.disabled = false;
@@ -719,14 +703,8 @@ async function procesarEnvioReporte() {
     }
     return;
   }
-  state.ticketActual = ticket;
-  try {
-    localStorage.setItem('srv_last_ticket', ticket);
-  } catch (error) {
-    console.error('No se pudo guardar el último ticket en localStorage:', error);
-  }
 
-  // 6. Feedback Inmediato: Pantalla Verde + Tono auditivo + Vibración
+  const ticket = state.ticketActual;
   setTimeout(() => {
     const ticketNumeroEl = document.getElementById('ticket-numero');
     if (ticketNumeroEl) ticketNumeroEl.textContent = ticket;
@@ -745,13 +723,24 @@ async function procesarEnvioReporte() {
 
 // ─── Seguimiento en Tiempo Real (RF-04, RF-05) ───────────────────────────────
 
-function consultarEstadoTicket(codigoTicket) {
+async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false) {
   if (!codigoTicket) return;
-  const cases = getCasesFromStorage();
-  const incidente = cases.find(c => c.ticket.trim().toUpperCase() === codigoTicket.trim().toUpperCase());
-
-  if (!incidente) {
-    showToast(`El ticket ${codigoTicket} no fue encontrado`, 'error');
+  if (!supabaseClient) {
+    if (notificarNoEncontrado) showToast('No se pudo conectar con Supabase para consultar el seguimiento.', 'error');
+    return;
+  }
+  const { data: incidente, error } = await supabaseClient
+    .from('incidentes')
+    .select()
+    .eq('ticket', codigoTicket.trim().toUpperCase())
+    .single();
+  if (error) {
+    console.error('No se pudo consultar el seguimiento:', error);
+    if (notificarNoEncontrado) {
+      showToast(error.code === 'PGRST116'
+        ? `El ticket ${codigoTicket} no fue encontrado`
+        : 'No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
+    }
     return;
   }
 
@@ -800,7 +789,7 @@ function activarMonitoreoSeguimiento(ticket) {
   if (state.pollingSeguimiento) {
     clearInterval(state.pollingSeguimiento);
   }
-  consultarEstadoTicket(ticket);
+  consultarEstadoTicket(ticket, true);
 
   // Polling cada 2 segundos para reflejar cambios del Operador o Serenazgo casi en vivo
   state.pollingSeguimiento = setInterval(() => {
@@ -826,12 +815,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (formLoginCiudadano) {
     formLoginCiudadano.addEventListener('submit', (event) => {
       event.preventDefault();
-      autenticarCiudadano('/api/ciudadanos/login', 'Acceso correcto. Ya puedes reportar.');
+      autenticarCiudadano('login', 'Acceso correcto. Ya puedes reportar.');
     });
   }
 
   document.getElementById('btn-registro-ciudadano')?.addEventListener('click', () => {
-    autenticarCiudadano('/api/ciudadanos/registro', 'Cuenta creada. Ya puedes reportar.');
+    autenticarCiudadano('register', 'Cuenta creada. Ya puedes reportar.');
   });
 
   // 1. Botón SOS Principal (Toca para iniciar flujo de 3 pasos)
@@ -1087,7 +1076,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnIrSeguimiento) {
     btnIrSeguimiento.addEventListener('click', () => {
       mostrarPantalla('screen-seguimiento');
-      const lastTicket = localStorage.getItem('srv_last_ticket');
+      const lastTicket = state.ticketActual;
       if (lastTicket) {
         const input = document.getElementById('input-ticket');
         if (input) input.value = lastTicket;
@@ -1105,12 +1094,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 150);
   }
 
-  // 11. Escuchar evento `storage` para actualizar seguimiento si cambia en otra pestaña
-  window.addEventListener('storage', (e) => {
-    if (e.key === 'cases' && state.ticketActual) {
-      consultarEstadoTicket(state.ticketActual);
-    }
-  });
+  if (!supabaseClient) {
+    console.error('No se pudo cargar la librería cliente de Supabase.');
+  } else {
+    supabaseClient.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      const user = data.session?.user;
+      if (user?.app_metadata?.role === 'ciudadano') {
+        state.dniActual = user.app_metadata.dni;
+        mostrarPantalla('screen-home');
+        document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
+      }
+    }).catch(error => console.error('No se pudo restaurar la sesión ciudadana:', error));
+  }
 
-  console.log('🚨 Módulo Ciudadano Inicializado. Datos sincronizados con localStorage ("cases=[]").');
+  console.log('Módulo Ciudadano inicializado con persistencia Supabase.');
 });
