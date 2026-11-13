@@ -71,7 +71,6 @@ async function cargarIncidentes() {
     const { data, error } = await supabaseClient
       .from('incidentes')
       .select('*')
-      .neq('estado', 'cancelado')
       .order('timestamp', { ascending: false });
     if (error) throw error;
     dashboardState.casos = data || [];
@@ -86,6 +85,9 @@ async function actualizarDatosDashboard() {
   try {
     await cargarIncidentes();
     dashboardState.lastLoadError = null;
+    if (document.getElementById('view-historial')?.classList.contains('active')) {
+      renderizarHistorial();
+    }
     if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
       renderizarEstadisticas();
     }
