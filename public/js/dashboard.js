@@ -64,17 +64,22 @@ function escaparHTML(valor) {
 }
 
 async function cargarIncidentes() {
-  if (!supabaseClient) {
-    throw new Error('No se pudo cargar la librería cliente de Supabase.');
+  try {
+    if (!supabaseClient) {
+      throw new Error('No se pudo cargar la librería cliente de Supabase.');
+    }
+    const { data, error } = await supabaseClient
+      .from('incidentes')
+      .select('*')
+      .neq('estado', 'cancelado')
+      .order('timestamp', { ascending: false });
+    if (error) throw error;
+    dashboardState.casos = data || [];
+    renderizarDashboard();
+  } catch (error) {
+    console.error('No se pudieron cargar los incidentes desde Supabase:', error);
+    throw error;
   }
-  const { data, error } = await supabaseClient
-    .from('incidentes')
-    .select()
-    .neq('estado', 'cancelado')
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  dashboardState.casos = data || [];
-  renderizarDashboard();
 }
 
 async function actualizarDatosDashboard() {
@@ -85,7 +90,6 @@ async function actualizarDatosDashboard() {
       renderizarEstadisticas();
     }
   } catch (error) {
-    console.error('No se pudieron cargar los incidentes desde Supabase:', error);
     if (dashboardState.lastLoadError !== error.message) {
       notify(error.message || 'No se pudieron cargar los incidentes.', 'error');
       dashboardState.lastLoadError = error.message;

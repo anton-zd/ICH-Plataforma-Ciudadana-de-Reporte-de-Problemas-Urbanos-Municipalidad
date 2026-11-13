@@ -701,7 +701,7 @@ async function procesarEnvioReporte() {
     hablarTexto('¡Serenazgo en camino! Tu solicitud ha sido recibida con el código ' + state.ticketActual);
   } catch (error) {
     console.error('No se pudo guardar el reporte en Supabase:', error);
-    showToast(error.message || 'No se pudo guardar el reporte. Inténtalo nuevamente.', 'error');
+    alert('No se pudo enviar el reporte. Verifica tu conexión y vuelve a intentarlo.');
   } finally {
     state.envioEnCurso = false;
     if (btn) {
