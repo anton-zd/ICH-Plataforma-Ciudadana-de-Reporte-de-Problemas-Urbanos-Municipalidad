@@ -416,25 +416,14 @@ window.seleccionarUnidadModal = function(unidadId) {
 async function confirmarDespacho() {
   if (!dashboardState.incidenteSeleccionado || !dashboardState.unidadSeleccionadaId) return;
 
-  const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
-  if (btnConfirmar?.disabled) return;
-
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const unidad = UNIDADES_DISPONIBLES.find(u => u.id === dashboardState.unidadSeleccionadaId);
   if (!unidad) {
     notify('La unidad seleccionada ya no está disponible.', 'error');
     return;
   }
-
-  const textoOriginal = btnConfirmar?.innerHTML;
-  if (btnConfirmar) {
-    btnConfirmar.disabled = true;
-    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Despachando…';
-  }
-
   try {
-    if (!supabaseClient) throw new Error('No se pudo conectar con Supabase para despachar la unidad.');
-    const { data: asignacion, error } = await supabaseClient
+    const { error } = await supabaseClient
       .from('incidentes')
       .update({
         estado: 'asignado',
@@ -446,50 +435,14 @@ async function confirmarDespacho() {
       })
       .eq('ticket', ticket)
       .eq('estado', 'recibido')
-      .select('ticket, estado, unidad_asignada')
-      .maybeSingle();
+      .select('ticket')
+      .single();
     if (error) throw error;
-
-    if (!asignacion) {
-      const { data: estadoActual, error: consultaError } = await supabaseClient
-        .from('incidentes')
-        .select('estado, unidad_asignada')
-        .eq('ticket', ticket)
-        .maybeSingle();
-      if (consultaError) throw consultaError;
-
-      if (estadoActual?.estado === 'asignado' && estadoActual.unidad_asignada === unidad.id) {
-        notify(`${ticket} ya estaba asignado a ${unidad.codigo}.`, 'info');
-        cerrarModal('modal-asignar');
-        await actualizarDatosDashboard();
-        return;
-      }
-
-      notify(
-        estadoActual
-          ? `${ticket} ya no está disponible para despacho (estado: ${estadoActual.estado}).`
-          : `No se encontró el incidente ${ticket}.`,
-        'error'
-      );
-      await actualizarDatosDashboard();
-      return;
-    }
-
     notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
   } catch (error) {
     console.error('No se pudo asignar la unidad:', error);
-    notify(
-      error.code === '23505'
-        ? `La unidad ${unidad.codigo} ya tiene otro incidente activo. Actualiza la lista y selecciona otra unidad.`
-        : error.message || `No se pudo despachar el incidente ${ticket}.`,
-      'error'
-    );
+    notify(error.message || `No se pudo despachar el incidente ${ticket}.`, 'error');
     return;
-  } finally {
-    if (btnConfirmar) {
-      btnConfirmar.disabled = false;
-      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
-    }
   }
 
   cerrarModal('modal-asignar');
@@ -514,70 +467,29 @@ window.abrirModalCierre = function(ticket) {
 async function confirmarCierreIncidente() {
   if (!dashboardState.incidenteSeleccionado) return;
 
-  const btnConfirmar = document.getElementById('btn-confirmar-cierre');
-  if (btnConfirmar?.disabled) return;
-
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const estadoSelect = document.getElementById('cierre-estado');
   const obsText = document.getElementById('cierre-observaciones');
   const estado = estadoSelect ? estadoSelect.value : 'atendido';
   const actualizadoAt = new Date().toISOString();
-  const textoOriginal = btnConfirmar?.innerHTML;
-  if (btnConfirmar) {
-    btnConfirmar.disabled = true;
-    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando cierre…';
-  }
-
   try {
-    if (!supabaseClient) throw new Error('No se pudo conectar con Supabase para cerrar el incidente.');
-    const { data: cierre, error } = await supabaseClient
+    const { error } = await supabaseClient
       .from('incidentes')
       .update({
         estado,
-        observaciones: obsText?.value.trim() || 'Cerrado por operador',
+        observaciones: obsText ? obsText.value : 'Cerrado por operador',
         atendido_at: actualizadoAt,
         updated_at: actualizadoAt
       })
       .eq('ticket', ticket)
-      .select('ticket, estado')
-      .maybeSingle();
+      .select('ticket')
+      .single();
     if (error) throw error;
-
-    if (!cierre) {
-      const { data: estadoActual, error: consultaError } = await supabaseClient
-        .from('incidentes')
-        .select('estado')
-        .eq('ticket', ticket)
-        .maybeSingle();
-      if (consultaError) throw consultaError;
-
-      if (estadoActual && ['atendido', 'cancelado'].includes(estadoActual.estado)) {
-        notify(`El incidente ${ticket} ya estaba cerrado (${estadoActual.estado}).`, 'info');
-        cerrarModal('modal-cierre');
-        await actualizarDatosDashboard();
-        return;
-      }
-
-      notify(
-        estadoActual
-          ? `No se cerró ${ticket}; su estado actual es ${estadoActual.estado}. Actualiza e inténtalo de nuevo.`
-          : `No se encontró el incidente ${ticket}.`,
-        'error'
-      );
-      await actualizarDatosDashboard();
-      return;
-    }
-
     notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
   } catch (error) {
     console.error('No se pudo cerrar el incidente:', error);
     notify(error.message || `No se pudo cerrar el incidente ${ticket}.`, 'error');
     return;
-  } finally {
-    if (btnConfirmar) {
-      btnConfirmar.disabled = false;
-      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
-    }
   }
 
   cerrarModal('modal-cierre');
