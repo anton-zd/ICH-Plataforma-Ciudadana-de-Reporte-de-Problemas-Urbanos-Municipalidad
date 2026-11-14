@@ -246,6 +246,35 @@ GRANT EXECUTE ON FUNCTION public.ciudadano_login_permitido(text) TO service_role
 GRANT EXECUTE ON FUNCTION public.registrar_fallo_login_ciudadano(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.limpiar_fallos_login_ciudadano(text) TO service_role;
 
+CREATE OR REPLACE FUNCTION public.obtener_solicitud_activa_ciudadano()
+RETURNS TABLE(ticket text, estado text)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, auth
+AS $$
+DECLARE
+  v_dni text := auth.jwt() -> 'app_metadata' ->> 'dni';
+BEGIN
+  IF (auth.jwt() -> 'app_metadata' ->> 'role') IS DISTINCT FROM 'ciudadano'
+    OR v_dni IS NULL
+  THEN
+    RAISE EXCEPTION 'Solo un ciudadano autenticado puede consultar su solicitud activa.';
+  END IF;
+
+  RETURN QUERY
+  SELECT incidente.ticket, incidente.estado
+  FROM public.incidentes AS incidente
+  WHERE incidente.ciudadano_dni = v_dni
+    AND incidente.estado IN ('recibido', 'asignado', 'en_camino')
+  ORDER BY incidente.timestamp DESC
+  LIMIT 1;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.obtener_solicitud_activa_ciudadano() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.obtener_solicitud_activa_ciudadano() TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.agregar_anotacion_ciudadano(
   p_ticket text,
   p_anotacion text

@@ -287,20 +287,13 @@ async function autenticarCiudadano(action, mensajeExito) {
 
 const ESTADOS_SOLICITUD_ACTIVA = ['recibido', 'asignado', 'en_camino'];
 
-async function obtenerSolicitudActiva(dni = state.dniActual) {
-  if (!supabaseClient || !dni) {
+async function obtenerSolicitudActiva() {
+  if (!supabaseClient) {
     throw new Error('No se pudo verificar tu solicitud activa.');
   }
-  const { data, error } = await supabaseClient
-    .from('incidentes')
-    .select('*')
-    .eq('ciudadano_dni', dni)
-    .in('estado', ESTADOS_SOLICITUD_ACTIVA)
-    .order('timestamp', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await supabaseClient.rpc('obtener_solicitud_activa_ciudadano');
   if (error) throw error;
-  return data;
+  return Array.isArray(data) ? data[0] || null : data || null;
 }
 
 function actualizarDisponibilidadReporte() {
@@ -322,13 +315,23 @@ function actualizarDisponibilidadReporte() {
 }
 
 async function sincronizarSolicitudActiva({ avisar = true } = {}) {
+  const codigoError = document.getElementById('home-request-check-error-code');
   try {
     state.incidentePendiente = await obtenerSolicitudActiva();
     state.verificacionSolicitudCompleta = true;
+    if (codigoError) {
+      codigoError.textContent = '';
+      codigoError.classList.add('hidden');
+    }
     actualizarDisponibilidadReporte();
     return true;
   } catch (error) {
     state.verificacionSolicitudCompleta = false;
+    if (codigoError) {
+      const codigo = error?.code || error?.status;
+      codigoError.textContent = codigo ? `Código de error: ${codigo}` : '';
+      codigoError.classList.toggle('hidden', !codigo);
+    }
     actualizarDisponibilidadReporte();
     console.error('No se pudo verificar la solicitud activa del ciudadano:', error);
     if (avisar) showToast('No se pudo verificar si tienes una solicitud activa. Inténtalo de nuevo.', 'error');
@@ -728,7 +731,7 @@ async function procesarEnvioReporte() {
     if (!Number.isFinite(state.lat) || !Number.isFinite(state.lng)) {
       throw new Error('Confirma una ubicación válida antes de enviar el reporte.');
     }
-    const solicitudExistente = await obtenerSolicitudActiva(ciudadanoDni);
+    const solicitudExistente = await obtenerSolicitudActiva();
     if (solicitudExistente) {
       state.incidentePendiente = solicitudExistente;
       state.verificacionSolicitudCompleta = true;
