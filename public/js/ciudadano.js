@@ -7,8 +7,8 @@
 
 'use strict';
 
-const supabaseUrl = 'https://nazqgqiyluoqytgwyoga.supabase.co';
-const supabaseKey = 'sb_publishable_CdzSpjn1Me7fxnKJ7VOCzQ_tWzoLYVu';
+const supabaseUrl = 'https://lipzgvzhiznoebmzjmwi.supabase.co';
+const supabaseKey = 'sb_publishable_HdsFY1neo8q0nRCp-Wog1A_ideexOdx';
 const supabaseClient = window.supabase
   ? window.supabase.createClient(supabaseUrl, supabaseKey, {
     auth: { storageKey: 'serenazgo-ciudadano-auth' }
