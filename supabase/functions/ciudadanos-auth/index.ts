@@ -1,6 +1,15 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@^2/cors';
 
+async function medirEtapa<T>(nombre: string, operacion: () => PromiseLike<T>): Promise<T> {
+  const inicio = performance.now();
+  try {
+    return await operacion();
+  } finally {
+    console.info(`[ciudadanos-auth] ${nombre}: ${Math.round(performance.now() - inicio)}ms`);
+  }
+}
+
 function response(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -120,9 +129,9 @@ Deno.serve(async request => {
     }
   }
 
-  const { data: canAttempt, error: rateError } = await admin.rpc(
-    'ciudadano_login_permitido',
-    { p_key_hash: rateKey }
+  const { data: canAttempt, error: rateError } = await medirEtapa(
+    'rate-limit-check',
+    () => admin.rpc('ciudadano_login_permitido', { p_key_hash: rateKey })
   );
   if (rateError) {
     console.error('No se pudo comprobar el límite de intentos:', rateError.message);
@@ -132,19 +141,18 @@ Deno.serve(async request => {
     return response({ error: 'Demasiados intentos. Espera 15 minutos antes de volver a intentarlo.' }, 429);
   }
 
-  const { data: citizen, error: citizenError } = await admin
-    .from('ciudadanos')
-    .select('dni')
-    .eq('dni', dni)
-    .maybeSingle();
+  const { data: citizen, error: citizenError } = await medirEtapa(
+    'citizen-lookup',
+    () => admin.from('ciudadanos').select('dni').eq('dni', dni).maybeSingle()
+  );
   if (citizenError) {
     console.error('No se pudo buscar la cuenta ciudadana:', citizenError.message);
     return response({ error: 'No se pudo validar el acceso.' }, 500);
   }
   if (!citizen) {
-    const { error: attemptError } = await admin.rpc(
-      'registrar_fallo_login_ciudadano',
-      { p_key_hash: rateKey }
+    const { error: attemptError } = await medirEtapa(
+      'record-failed-attempt',
+      () => admin.rpc('registrar_fallo_login_ciudadano', { p_key_hash: rateKey })
     );
     if (attemptError) {
       console.error('No se pudo registrar el intento de acceso:', attemptError.message);
@@ -155,14 +163,14 @@ Deno.serve(async request => {
 
   const email = `${dni}@ciudadanos.serenazgo.invalid`;
   const authPassword = await deriveAuthPassword(pinPepper, dni, pin);
-  const { data: signedIn, error: signInError } = await authClient.auth.signInWithPassword({
-    email,
-    password: authPassword
-  });
+  const { data: signedIn, error: signInError } = await medirEtapa(
+    'supabase-auth-sign-in',
+    () => authClient.auth.signInWithPassword({ email, password: authPassword })
+  );
   if (signInError || !signedIn.session) {
-    const { error: attemptError } = await admin.rpc(
-      'registrar_fallo_login_ciudadano',
-      { p_key_hash: rateKey }
+    const { error: attemptError } = await medirEtapa(
+      'record-failed-attempt',
+      () => admin.rpc('registrar_fallo_login_ciudadano', { p_key_hash: rateKey })
     );
     if (attemptError) {
       console.error('No se pudo registrar el intento de acceso:', attemptError.message);
@@ -171,9 +179,9 @@ Deno.serve(async request => {
     return response({ error: 'DNI o PIN incorrectos.' }, 401);
   }
 
-  const { error: clearError } = await admin.rpc(
-    'limpiar_fallos_login_ciudadano',
-    { p_key_hash: rateKey }
+  const { error: clearError } = await medirEtapa(
+    'clear-failed-attempts',
+    () => admin.rpc('limpiar_fallos_login_ciudadano', { p_key_hash: rateKey })
   );
   if (clearError) {
     console.error('No se pudo reiniciar el límite de intentos:', clearError.message);

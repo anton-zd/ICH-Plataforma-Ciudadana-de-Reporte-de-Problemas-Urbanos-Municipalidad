@@ -234,6 +234,22 @@ function vibrar(patron = [60]) {
   }
 }
 
+async function obtenerMensajeErrorAutenticacion(error) {
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === 'string') return payload.error;
+    } catch {
+      // Si la respuesta no es JSON, se informa el estado HTTP.
+    }
+    if (Number.isInteger(response.status)) {
+      return `El servicio de autenticación respondió con HTTP ${response.status}.`;
+    }
+  }
+  return error?.message || 'No se pudo validar el acceso.';
+}
+
 async function autenticarCiudadano(action, mensajeExito) {
   const dniInput = document.getElementById('ciudadano-dni');
   const pinInput = document.getElementById('ciudadano-pin');
@@ -259,20 +275,37 @@ async function autenticarCiudadano(action, mensajeExito) {
     if (!supabaseClient) {
       throw new Error('No se pudo cargar la librería cliente de Supabase.');
     }
-    const { data, error } = await supabaseClient.functions.invoke('ciudadanos-auth', {
-      body: { action, dni, pin }
-    });
-    if (error) throw new Error(data?.error || error.message || 'No se pudo validar el acceso.');
+    const controller = action === 'login' ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), 15000)
+      : null;
+    let authResult;
+    try {
+      authResult = await supabaseClient.functions.invoke('ciudadanos-auth', {
+        body: { action, dni, pin },
+        ...(controller ? { signal: controller.signal } : {})
+      });
+    } finally {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    }
+    if (controller?.signal.aborted) {
+      throw new Error('El inicio de sesión tardó más de 15 segundos. Comprueba tu conexión e inténtalo nuevamente.');
+    }
+    const { data, error } = authResult;
+    if (error) throw new Error(await obtenerMensajeErrorAutenticacion(error));
     if (data?.error) throw new Error(data.error);
+    if (!data?.session?.access_token || !data?.session?.refresh_token) {
+      throw new Error('El servicio de autenticación devolvió una respuesta incompleta. Inténtalo nuevamente.');
+    }
 
     const { error: sessionError } = await supabaseClient.auth.setSession(data.session);
     if (sessionError) throw sessionError;
 
     state.dniActual = dni;
-    await sincronizarSolicitudActiva({ avisar: false });
     mostrarPantalla('screen-home');
     document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
     showToast(mensajeExito, 'success');
+    void sincronizarSolicitudActiva({ avisar: false });
   } catch (error) {
     console.error('Error de acceso ciudadano:', error);
     if (errorEl) {

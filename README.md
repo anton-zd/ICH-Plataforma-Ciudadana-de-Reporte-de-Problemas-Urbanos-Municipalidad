@@ -17,7 +17,7 @@ Aplicación web de atención de emergencias de la Municipalidad de Chorrillos. L
    ```
 
    Supabase proporciona `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al entorno Edge. La clave `service_role` nunca debe copiarse a archivos del sitio. La función limita los intentos fallidos por DNI y dirección IP.
-   La función usa la lista CORS mantenida por `supabase-js`; vuelve a desplegarla con el comando anterior después de cualquier cambio de CORS. Si la llamada falla, confirma que vinculaste el proyecto correcto (`supabase projects list` / `supabase link`) y revisa los logs de `ciudadanos-auth` en Supabase Dashboard.
+   La función usa la lista CORS mantenida por `supabase-js`; vuelve a desplegarla con el comando anterior después de cualquier cambio de CORS. Si la llamada falla, confirma que vinculaste el proyecto correcto (`supabase projects list` / `supabase link`) y revisa los logs de `ciudadanos-auth` en Supabase Dashboard. El login del navegador vence a los 15 segundos; los logs muestran la duración de cada consulta de base de datos/Auth, sin registrar DNI ni PIN.
 
 5. Crea los usuarios de personal desde Supabase Auth:
    - Usa correos `operador1@personal.serenazgo.invalid` y `sereno1@personal.serenazgo.invalid` (o los nombres de usuario que prefieras).
