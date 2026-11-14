@@ -416,14 +416,25 @@ window.seleccionarUnidadModal = function(unidadId) {
 async function confirmarDespacho() {
   if (!dashboardState.incidenteSeleccionado || !dashboardState.unidadSeleccionadaId) return;
 
+  const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
+  if (btnConfirmar?.disabled) return;
+
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const unidad = UNIDADES_DISPONIBLES.find(u => u.id === dashboardState.unidadSeleccionadaId);
   if (!unidad) {
     notify('La unidad seleccionada ya no está disponible.', 'error');
     return;
   }
+
+  const textoOriginal = btnConfirmar?.innerHTML;
+  if (btnConfirmar) {
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Despachando…';
+  }
+
   try {
-    const { error } = await supabaseClient
+    if (!supabaseClient) throw new Error('No se pudo conectar con Supabase para despachar la unidad.');
+    const { data: asignacion, error } = await supabaseClient
       .from('incidentes')
       .update({
         estado: 'asignado',
@@ -435,14 +446,50 @@ async function confirmarDespacho() {
       })
       .eq('ticket', ticket)
       .eq('estado', 'recibido')
-      .select('ticket')
-      .single();
+      .select('ticket, estado, unidad_asignada')
+      .maybeSingle();
     if (error) throw error;
+
+    if (!asignacion) {
+      const { data: estadoActual, error: consultaError } = await supabaseClient
+        .from('incidentes')
+        .select('estado, unidad_asignada')
+        .eq('ticket', ticket)
+        .maybeSingle();
+      if (consultaError) throw consultaError;
+
+      if (estadoActual?.estado === 'asignado' && estadoActual.unidad_asignada === unidad.id) {
+        notify(`${ticket} ya estaba asignado a ${unidad.codigo}.`, 'info');
+        cerrarModal('modal-asignar');
+        await actualizarDatosDashboard();
+        return;
+      }
+
+      notify(
+        estadoActual
+          ? `${ticket} ya no está disponible para despacho (estado: ${estadoActual.estado}).`
+          : `No se encontró el incidente ${ticket}.`,
+        'error'
+      );
+      await actualizarDatosDashboard();
+      return;
+    }
+
     notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
   } catch (error) {
     console.error('No se pudo asignar la unidad:', error);
-    notify(error.message || `No se pudo despachar el incidente ${ticket}.`, 'error');
+    notify(
+      error.code === '23505'
+        ? `La unidad ${unidad.codigo} ya tiene otro incidente activo. Actualiza la lista y selecciona otra unidad.`
+        : error.message || `No se pudo despachar el incidente ${ticket}.`,
+      'error'
+    );
     return;
+  } finally {
+    if (btnConfirmar) {
+      btnConfirmar.disabled = false;
+      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
+    }
   }
 
   cerrarModal('modal-asignar');
