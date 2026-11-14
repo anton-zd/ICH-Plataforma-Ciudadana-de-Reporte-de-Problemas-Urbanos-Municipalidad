@@ -20,19 +20,19 @@ Aplicación web de atención de emergencias de la Municipalidad de Chorrillos. L
    La función usa la lista CORS mantenida por `supabase-js`; vuelve a desplegarla con el comando anterior después de cualquier cambio de CORS. Si la llamada falla, confirma que vinculaste el proyecto correcto (`supabase projects list` / `supabase link`) y revisa los logs de `ciudadanos-auth` en Supabase Dashboard.
 
 5. Crea los usuarios de personal desde Supabase Auth:
-   - Usa correos `operador1@personal.serenazgo.invalid` y `sereno1@personal.serenazgo.invalid` (o los nombres de usuario que prefieras).
+   - En el proyecto Supabase actual, los usuarios son `central_1@personal.serenazgo.invalid` y `sereno_1@personal.serenazgo.invalid` (el login acepta los nombres `central_1` y `sereno_1`). Si creas cuentas diferentes, reemplaza estos correos en los siguientes ejemplos.
    - Asigna contraseñas seguras en Auth y ejecuta en el SQL Editor, sustituyendo los correos si cambiaste los usuarios:
 
      ```sql
      UPDATE auth.users
      SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb)
        || '{"role":"operador","nombre":"Central Chorrillos"}'::jsonb
-     WHERE email = 'operador1@personal.serenazgo.invalid';
+     WHERE email = 'central_1@personal.serenazgo.invalid';
 
      UPDATE auth.users
      SET raw_app_meta_data = COALESCE(raw_app_meta_data, '{}'::jsonb)
        || '{"role":"sereno","unit_code":"SR-01","nombre":"Patrulla SR-01"}'::jsonb
-     WHERE email = 'sereno1@personal.serenazgo.invalid';
+     WHERE email = 'sereno_1@personal.serenazgo.invalid';
      ```
 
    - Los roles deben configurarse como **app metadata** de administración, nunca como user metadata modificable por el cliente. Vuelve a iniciar sesión tras cambiar los metadatos para emitir un JWT actualizado.

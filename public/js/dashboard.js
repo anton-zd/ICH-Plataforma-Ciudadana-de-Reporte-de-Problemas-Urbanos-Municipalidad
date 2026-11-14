@@ -514,29 +514,70 @@ window.abrirModalCierre = function(ticket) {
 async function confirmarCierreIncidente() {
   if (!dashboardState.incidenteSeleccionado) return;
 
+  const btnConfirmar = document.getElementById('btn-confirmar-cierre');
+  if (btnConfirmar?.disabled) return;
+
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const estadoSelect = document.getElementById('cierre-estado');
   const obsText = document.getElementById('cierre-observaciones');
   const estado = estadoSelect ? estadoSelect.value : 'atendido';
   const actualizadoAt = new Date().toISOString();
+  const textoOriginal = btnConfirmar?.innerHTML;
+  if (btnConfirmar) {
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando cierre…';
+  }
+
   try {
-    const { error } = await supabaseClient
+    if (!supabaseClient) throw new Error('No se pudo conectar con Supabase para cerrar el incidente.');
+    const { data: cierre, error } = await supabaseClient
       .from('incidentes')
       .update({
         estado,
-        observaciones: obsText ? obsText.value : 'Cerrado por operador',
+        observaciones: obsText?.value.trim() || 'Cerrado por operador',
         atendido_at: actualizadoAt,
         updated_at: actualizadoAt
       })
       .eq('ticket', ticket)
-      .select('ticket')
-      .single();
+      .select('ticket, estado')
+      .maybeSingle();
     if (error) throw error;
+
+    if (!cierre) {
+      const { data: estadoActual, error: consultaError } = await supabaseClient
+        .from('incidentes')
+        .select('estado')
+        .eq('ticket', ticket)
+        .maybeSingle();
+      if (consultaError) throw consultaError;
+
+      if (estadoActual && ['atendido', 'cancelado'].includes(estadoActual.estado)) {
+        notify(`El incidente ${ticket} ya estaba cerrado (${estadoActual.estado}).`, 'info');
+        cerrarModal('modal-cierre');
+        await actualizarDatosDashboard();
+        return;
+      }
+
+      notify(
+        estadoActual
+          ? `No se cerró ${ticket}; su estado actual es ${estadoActual.estado}. Actualiza e inténtalo de nuevo.`
+          : `No se encontró el incidente ${ticket}.`,
+        'error'
+      );
+      await actualizarDatosDashboard();
+      return;
+    }
+
     notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
   } catch (error) {
     console.error('No se pudo cerrar el incidente:', error);
     notify(error.message || `No se pudo cerrar el incidente ${ticket}.`, 'error');
     return;
+  } finally {
+    if (btnConfirmar) {
+      btnConfirmar.disabled = false;
+      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
+    }
   }
 
   cerrarModal('modal-cierre');
