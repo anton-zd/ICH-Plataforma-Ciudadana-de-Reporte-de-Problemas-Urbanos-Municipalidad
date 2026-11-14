@@ -1,7 +1,7 @@
 /**
  * public/js/dashboard.js
  * Lógica Frontend del Rol Operador Central — Sistema Inclusivo de Serenazgo
- * Gestión en Tiempo Real de Incidentes en Supabase
+ * Gestión de Incidentes en Supabase con sondeo ligero
  * Regla de Negocio RN-01: Priorización automática de Violencia y Auxilio en la cola
  */
 
@@ -27,7 +27,9 @@ const dashboardState = {
   chartInstances: {},
   casos: [],
   lastLoadError: null,
-  realtimeChannel: null,
+  refreshInFlight: false,
+  pendingStatsRefresh: false,
+  evidenceLoadsInFlight: new Set(),
 };
 
 // Flota de Unidades de Serenazgo de Chorrillos disponibles para despacho
@@ -70,7 +72,7 @@ async function cargarIncidentes() {
     }
     const { data, error } = await supabaseClient
       .from('incidentes')
-      .select('*')
+      .select('id,ticket,ciudadano_dni,tipo,prioridad,ubicacion,referencia,tiene_audio,tiene_audio_evidencia,tiene_foto,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,observaciones,timestamp,updated_at,atendido_at')
       .order('timestamp', { ascending: false });
     if (error) throw error;
     dashboardState.casos = data || [];
@@ -82,6 +84,12 @@ async function cargarIncidentes() {
 }
 
 async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {}) {
+  if (dashboardState.refreshInFlight) {
+    if (actualizarEstadisticas) dashboardState.pendingStatsRefresh = true;
+    return;
+  }
+  dashboardState.refreshInFlight = true;
+
   try {
     await cargarIncidentes();
     dashboardState.lastLoadError = null;
@@ -96,6 +104,19 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
     if (dashboardState.lastLoadError !== error.message) {
       notify(error.message || 'No se pudieron cargar los incidentes.', 'error');
       dashboardState.lastLoadError = error.message;
+    }
+    if (!dashboardState.casos.length) {
+      const listContainer = document.getElementById('incidents-list');
+      if (listContainer) {
+        listContainer.innerHTML = '<div class="text-center py-5 text-danger">No se pudieron cargar las emergencias. Se volverá a intentar automáticamente.</div>';
+      }
+    }
+  } finally {
+    dashboardState.refreshInFlight = false;
+    const refrescarEstadisticas = dashboardState.pendingStatsRefresh && dashboardState.usuarioActual;
+    dashboardState.pendingStatsRefresh = false;
+    if (refrescarEstadisticas) {
+      void actualizarDatosDashboard({ actualizarEstadisticas: true });
     }
   }
 }
@@ -112,44 +133,10 @@ async function activarSesionOperador(user) {
   if (userLabel) userLabel.textContent = user.app_metadata.nombre || 'Central Chorrillos';
 
   await actualizarDatosDashboard();
-  await suscribirNuevosIncidentes();
   if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-  dashboardState.pollingInterval = setInterval(actualizarDatosDashboard, 2000);
-}
-
-async function suscribirNuevosIncidentes() {
-  if (!supabaseClient) return;
-  await desuscribirIncidentes();
-
-  dashboardState.realtimeChannel = supabaseClient
-    .channel('schema-db-changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'incidentes' },
-      payload => {
-        if (payload.eventType === 'INSERT') {
-          console.log('Nuevo incidente detectado:', payload.new);
-          notify(`¡Nueva alerta entrante! Ticket: ${payload.new.ticket}`, 'error');
-        }
-        void actualizarDatosDashboard();
-      }
-    )
-    .subscribe((status, error) => {
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.error('Falló la suscripción Realtime de incidentes:', error);
-        notify('Se perdió la conexión en tiempo real. Se intentará reconectar.', 'error');
-      }
-    });
-}
-
-async function desuscribirIncidentes() {
-  const channel = dashboardState.realtimeChannel;
-  dashboardState.realtimeChannel = null;
-  if (!channel || !supabaseClient) return;
-  const status = await supabaseClient.removeChannel(channel);
-  if (status !== 'ok') {
-    console.warn('No se pudo cerrar el canal Realtime del dashboard:', status);
-  }
+  dashboardState.pollingInterval = setInterval(() => {
+    void actualizarDatosDashboard();
+  }, 3000);
 }
 
 // ─── Notificaciones Toast ────────────────────────────────────────────────────
@@ -219,7 +206,7 @@ function renderizarDashboard() {
       <div class="text-center py-5 text-muted">
         <i class="bi bi-shield-check display-4 text-success d-block mb-2"></i>
         <div class="h5 fw-bold text-dark">No hay emergencias pendientes</div>
-        <small>Las nuevas solicitudes ciudadanas ingresarán automáticamente aquí en tiempo real.</small>
+        <small>Las nuevas solicitudes se detectan automáticamente en unos segundos.</small>
       </div>`;
     return;
   }
@@ -296,6 +283,54 @@ function actualizarMetricas(todosLosCasos) {
 
 // ─── Modal de Asignación y Despacho en 1 Clic (RN-02) ────────────────────────
 
+function renderizarEvidenciaModal(caso) {
+  const evidenciaContainer = document.getElementById('modal-evidencia-container');
+  const fotoPreview = document.getElementById('modal-foto-preview');
+  const audioPreview = document.getElementById('modal-audio-preview');
+
+  if (fotoPreview) {
+    fotoPreview.removeAttribute('src');
+    fotoPreview.classList.toggle('hidden', !caso.foto);
+    if (caso.foto) fotoPreview.src = caso.foto;
+  }
+  if (audioPreview) {
+    audioPreview.pause();
+    audioPreview.removeAttribute('src');
+    audioPreview.load();
+    audioPreview.classList.toggle('hidden', !caso.audio);
+    if (caso.audio) audioPreview.src = caso.audio;
+  }
+  if (evidenciaContainer) {
+    evidenciaContainer.classList.toggle('hidden', !(caso.foto || caso.audio));
+  }
+}
+
+async function cargarEvidenciaModal(ticket) {
+  if (dashboardState.evidenceLoadsInFlight.has(ticket)) return;
+  dashboardState.evidenceLoadsInFlight.add(ticket);
+  try {
+    const { data: evidencia, error } = await supabaseClient
+      .from('incidentes')
+      .select('foto,audio,audio_referencia,audio_evidencia')
+      .eq('ticket', ticket)
+      .maybeSingle();
+    if (error) throw error;
+
+    if (dashboardState.incidenteSeleccionado?.ticket !== ticket) return;
+    const caso = dashboardState.casos.find(item => item.ticket === ticket);
+    if (!caso) return;
+
+    Object.assign(caso, evidencia || {});
+    caso.audio = evidencia?.audio_evidencia || evidencia?.audio_referencia || evidencia?.audio || null;
+    renderizarEvidenciaModal(caso);
+  } catch (error) {
+    console.error('No se pudo cargar la evidencia del incidente:', error);
+    notify(error.message || 'No se pudo cargar la evidencia del incidente.', 'error');
+  } finally {
+    dashboardState.evidenceLoadsInFlight.delete(ticket);
+  }
+}
+
 window.abrirModalAsignacion = function(ticket) {
   const cases = obtenerCasos();
   const caso = cases.find(c => c.ticket === ticket);
@@ -308,37 +343,10 @@ window.abrirModalAsignacion = function(ticket) {
   const modalTicket = document.getElementById('modal-inc-ticket');
   const modalPrioridad = document.getElementById('modal-inc-prioridad');
   const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
-  const evidenciaContainer = document.getElementById('modal-evidencia-container');
-  const fotoPreview = document.getElementById('modal-foto-preview');
-  const audioPreview = document.getElementById('modal-audio-preview');
 
   if (modalTipo) modalTipo.textContent = `${TIPO_CONFIG[caso.tipo]?.icon || '🚨'} Emergencia por ${caso.tipo.toUpperCase()}`;
   if (modalTicket) modalTicket.textContent = `Código: ${caso.ticket}`;
-  if (fotoPreview) {
-    fotoPreview.removeAttribute('src');
-    fotoPreview.classList.add('hidden');
-  }
-  if (audioPreview) {
-    audioPreview.pause();
-    audioPreview.removeAttribute('src');
-    audioPreview.load();
-    audioPreview.classList.add('hidden');
-  }
-
-  let tieneEvidencia = false;
-  if (caso.foto && fotoPreview) {
-    fotoPreview.src = caso.foto;
-    fotoPreview.classList.remove('hidden');
-    tieneEvidencia = true;
-  }
-  if (caso.audio && audioPreview) {
-    audioPreview.src = caso.audio;
-    audioPreview.classList.remove('hidden');
-    tieneEvidencia = true;
-  }
-  if (evidenciaContainer) {
-    evidenciaContainer.classList.toggle('hidden', !tieneEvidencia);
-  }
+  renderizarEvidenciaModal(caso);
 
   if (modalPrioridad) {
     const esAlta = (caso.tipo === 'violencia' || caso.tipo === 'auxilio');
@@ -356,6 +364,7 @@ window.abrirModalAsignacion = function(ticket) {
     .filter(Boolean));
   const unidadesLibres = UNIDADES_DISPONIBLES.filter(unidad => !unidadesOcupadas.has(unidad.id));
   if (unidadesLibres.length === 0) {
+    dashboardState.incidenteSeleccionado = null;
     notify('No hay unidades disponibles para despachar.', 'error');
     return;
   }
@@ -397,6 +406,9 @@ window.abrirModalAsignacion = function(ticket) {
 
   const modal = document.getElementById('modal-asignar');
   if (modal) modal.classList.remove('hidden');
+  if ((caso.tiene_foto || caso.tiene_audio || caso.tiene_audio_evidencia) && !caso.foto && !caso.audio) {
+    void cargarEvidenciaModal(ticket);
+  }
 };
 
 window.seleccionarUnidadModal = function(unidadId) {
@@ -415,6 +427,8 @@ window.seleccionarUnidadModal = function(unidadId) {
 
 async function confirmarDespacho() {
   if (!dashboardState.incidenteSeleccionado || !dashboardState.unidadSeleccionadaId) return;
+  const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
+  if (btnConfirmar?.disabled) return;
 
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const unidad = UNIDADES_DISPONIBLES.find(u => u.id === dashboardState.unidadSeleccionadaId);
@@ -422,8 +436,15 @@ async function confirmarDespacho() {
     notify('La unidad seleccionada ya no está disponible.', 'error');
     return;
   }
+  const textoOriginal = btnConfirmar?.innerHTML;
+  if (btnConfirmar) {
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Asignando…';
+  }
+
+  let actualizacion;
   try {
-    const { error } = await supabaseClient
+    const { data, error } = await supabaseClient
       .from('incidentes')
       .update({
         estado: 'asignado',
@@ -435,18 +456,27 @@ async function confirmarDespacho() {
       })
       .eq('ticket', ticket)
       .eq('estado', 'recibido')
-      .select('ticket')
+      .select('ticket,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,updated_at')
       .single();
     if (error) throw error;
-    notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
+    actualizacion = data;
   } catch (error) {
     console.error('No se pudo asignar la unidad:', error);
     notify(error.message || `No se pudo despachar el incidente ${ticket}.`, 'error');
     return;
+  } finally {
+    if (btnConfirmar) {
+      btnConfirmar.disabled = false;
+      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
+    }
   }
 
+  const caso = dashboardState.casos.find(item => item.ticket === ticket);
+  if (caso && actualizacion) Object.assign(caso, actualizacion);
   cerrarModal('modal-asignar');
-  await actualizarDatosDashboard();
+  renderizarDashboard();
+  notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
+  void actualizarDatosDashboard();
 }
 
 // ─── Modal de Cierre de Emergencia ───────────────────────────────────────────
@@ -466,14 +496,23 @@ window.abrirModalCierre = function(ticket) {
 
 async function confirmarCierreIncidente() {
   if (!dashboardState.incidenteSeleccionado) return;
+  const btnConfirmar = document.getElementById('btn-confirmar-cierre');
+  if (btnConfirmar?.disabled) return;
 
   const ticket = dashboardState.incidenteSeleccionado.ticket;
   const estadoSelect = document.getElementById('cierre-estado');
   const obsText = document.getElementById('cierre-observaciones');
   const estado = estadoSelect ? estadoSelect.value : 'atendido';
   const actualizadoAt = new Date().toISOString();
+  const textoOriginal = btnConfirmar?.innerHTML;
+  if (btnConfirmar) {
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando…';
+  }
+
+  let actualizacion;
   try {
-    const { error } = await supabaseClient
+    const { data, error } = await supabaseClient
       .from('incidentes')
       .update({
         estado,
@@ -482,23 +521,43 @@ async function confirmarCierreIncidente() {
         updated_at: actualizadoAt
       })
       .eq('ticket', ticket)
-      .select('ticket')
+      .select('ticket,estado,observaciones,atendido_at,updated_at')
       .single();
     if (error) throw error;
-    notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
+    actualizacion = data;
   } catch (error) {
     console.error('No se pudo cerrar el incidente:', error);
     notify(error.message || `No se pudo cerrar el incidente ${ticket}.`, 'error');
     return;
+  } finally {
+    if (btnConfirmar) {
+      btnConfirmar.disabled = false;
+      if (textoOriginal) btnConfirmar.innerHTML = textoOriginal;
+    }
   }
 
+  const caso = dashboardState.casos.find(item => item.ticket === ticket);
+  if (caso && actualizacion) Object.assign(caso, actualizacion);
   cerrarModal('modal-cierre');
-  await actualizarDatosDashboard();
+  renderizarDashboard();
+  notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
+  void actualizarDatosDashboard();
 }
 
 function cerrarModal(modalId) {
   const m = document.getElementById(modalId);
   if (m) m.classList.add('hidden');
+  if (modalId === 'modal-asignar') {
+    renderizarEvidenciaModal({});
+    if (dashboardState.incidenteSeleccionado) {
+      delete dashboardState.incidenteSeleccionado.foto;
+      delete dashboardState.incidenteSeleccionado.audio;
+      delete dashboardState.incidenteSeleccionado.audio_referencia;
+      delete dashboardState.incidenteSeleccionado.audio_evidencia;
+    }
+    dashboardState.incidenteSeleccionado = null;
+    dashboardState.unidadSeleccionadaId = null;
+  }
 }
 
 // ─── Vistas Secundarias (Mapa, Historial, Estadísticas, Patrullas) ───────────
@@ -824,7 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.user?.app_metadata?.role !== 'operador') {
-          await supabaseClient.auth.signOut();
+          await supabaseClient.auth.signOut({ scope: 'local' });
           throw new Error('Esta cuenta no tiene permisos de operador.');
         }
         await activarSesionOperador(data.user);
@@ -843,13 +902,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. Logout
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-    await desuscribirIncidentes();
-    if (supabaseClient) {
-      const { error } = await supabaseClient.auth.signOut();
-      if (error) console.error('No se pudo cerrar la sesión de operador:', error);
-    }
+    dashboardState.pollingInterval = null;
+    dashboardState.usuarioActual = null;
+    dashboardState.casos = [];
+    dashboardState.pendingStatsRefresh = false;
+    cerrarModal('modal-asignar');
+    cerrarModal('modal-cierre');
     document.getElementById('dashboard-app')?.classList.add('hidden');
     document.getElementById('login-screen')?.classList.remove('hidden');
+    if (supabaseClient) {
+      const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
+      if (error) console.error('No se pudo cerrar la sesión de operador:', error);
+    }
   });
 
   // 3. Botón de Actualizar manual

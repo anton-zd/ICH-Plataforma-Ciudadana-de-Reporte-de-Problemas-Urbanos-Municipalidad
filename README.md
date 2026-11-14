@@ -60,7 +60,7 @@ La ubicación GPS requiere un origen seguro (localhost o HTTPS). También puedes
 - Los reportes, estados, asignaciones y evidencias se guardan en la tabla `incidentes`.
 - El DNI se valida mediante la Edge Function `ciudadanos-auth`. El PIN ciudadano es de 4 dígitos, no se guarda en la tabla `ciudadanos` y se deriva a una contraseña de Supabase Auth con un secreto del servidor. Las cuentas internas de operador/sereno usan el dominio separado `@personal.serenazgo.invalid`; las cuentas ciudadanas se crean en `@ciudadanos.serenazgo.invalid`.
 - Las políticas RLS limitan la lectura de reportes a su titular, al operador autenticado o a la unidad asignada. La clave `anon` del navegador es pública por diseño; nunca debe sustituirse por la `service_role`.
-- El dashboard se suscribe a Supabase Realtime para refrescar incidentes y KPIs al instante; conserva una consulta periódica como respaldo. El seguimiento del ciudadano consulta por número de ticket.
+- El dashboard consulta metadatos cada 3 segundos para actualizar incidentes y KPIs sin retransmitir evidencias en cada sondeo. Ciudadano y sereno también consultan solo los datos necesarios; las evidencias se cargan bajo demanda.
 - Las fotos y audios se guardan como Data URL en columnas de texto, según el flujo existente. Para producción y archivos grandes, conviene migrarlos a Supabase Storage y guardar en la fila solo sus rutas.
 - Los datos que existían en SQLite o en `localStorage` no se importan automáticamente; esta migración afecta los reportes nuevos.
 

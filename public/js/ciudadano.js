@@ -16,7 +16,6 @@ const supabaseClient = window.supabase
   : null;
 
 let fotoBase64 = null;
-let audioBase64 = null;
 let audioVozBase64 = null;
 let audioEvidenceBase64 = null;
 let fotoDataUrlPromise = Promise.resolve(true);
@@ -49,6 +48,7 @@ const state = {
   grabandoEvidencia: false,
   envioEnCurso: false,
   pollingSeguimiento: null,
+  consultaSeguimientoEnCurso: false,
 };
 
 // Catálogo descriptivo y visual de incidentes
@@ -102,8 +102,47 @@ function leerArchivoComoDataURL(file) {
   });
 }
 
-function actualizarAudioBase64() {
-  audioBase64 = audioEvidenceBase64 || audioVozBase64;
+function optimizarFotoComoDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    const leerOriginal = () => leerArchivoComoDataURL(file).then(resolve, reject);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const maxDimension = 1600;
+      const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.naturalWidth * scale);
+      canvas.height = Math.round(image.naturalHeight * scale);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        leerOriginal();
+        return;
+      }
+
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(async blob => {
+        canvas.width = 0;
+        canvas.height = 0;
+        if (!blob) {
+          leerOriginal();
+          return;
+        }
+        try {
+          resolve(await leerArchivoComoDataURL(blob));
+        } catch (error) {
+          reject(error);
+        }
+      }, 'image/jpeg', 0.75);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      leerOriginal();
+    };
+    image.src = objectUrl;
+  });
 }
 
 // ─── Control de Pantallas y Pasos (UI Mobile First) ──────────────────────────
@@ -422,7 +461,6 @@ async function alternarGrabacionVoz() {
       audioVozDataUrlPromise = leerArchivoComoDataURL(grabacion).then((dataUrl) => {
         if (state.audioBlob === grabacion) {
           audioVozBase64 = dataUrl;
-          actualizarAudioBase64();
         }
         return true;
       }).catch((error) => {
@@ -475,7 +513,6 @@ function borrarGrabacionVoz() {
   }
   state.audioBlob = null;
   audioVozBase64 = null;
-  actualizarAudioBase64();
   audioVozDataUrlPromise = Promise.resolve(true);
   state.mediaRecorderVoz = null;
   state.grabandoVoz = false;
@@ -543,7 +580,6 @@ async function alternarGrabacionEvidencia() {
       audioEvidenceDataUrlPromise = leerArchivoComoDataURL(grabacion).then((dataUrl) => {
         if (state.audioEvidenceBlob === grabacion) {
           audioEvidenceBase64 = dataUrl;
-          actualizarAudioBase64();
         }
         return true;
       }).catch((error) => {
@@ -599,7 +635,6 @@ function borrarGrabacionEvidencia() {
 
   state.audioEvidenceBlob = null;
   audioEvidenceBase64 = null;
-  actualizarAudioBase64();
   audioEvidenceDataUrlPromise = Promise.resolve(true);
   state.mediaRecorderEvidencia = null;
   state.grabandoEvidencia = false;
@@ -645,10 +680,11 @@ async function procesarEnvioReporte() {
       throw new Error('No se pudo conectar con Supabase para enviar el reporte.');
     }
 
-    const { data: authData, error: authError } = await supabaseClient.auth.getUser();
-    if (authError) throw authError;
-    const ciudadanoDni = state.dniActual || authData.user?.app_metadata?.dni;
-    if (!ciudadanoDni || authData.user?.app_metadata?.role !== 'ciudadano') {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError) throw sessionError;
+    const user = sessionData.session?.user;
+    const ciudadanoDni = state.dniActual || user?.app_metadata?.dni;
+    if (!ciudadanoDni || user?.app_metadata?.role !== 'ciudadano') {
       throw new Error('Tu sesión ciudadana venció. Inicia sesión nuevamente antes de enviar.');
     }
     if (!Number.isFinite(state.lat) || !Number.isFinite(state.lng)) {
@@ -673,7 +709,7 @@ async function procesarEnvioReporte() {
       tiene_audio_evidencia: !!state.audioEvidenceBlob,
       tiene_foto: !!state.fotoBlob,
       foto: fotoBase64,
-      audio: audioBase64,
+      audio: null,
       audio_referencia: audioVozBase64,
       audio_evidencia: audioEvidenceBase64,
       estado: 'recibido',
@@ -719,59 +755,65 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
     if (notificarNoEncontrado) showToast('No se pudo conectar con Supabase para consultar el seguimiento.', 'error');
     return;
   }
-  const { data: incidente, error } = await supabaseClient
-    .from('incidentes')
-    .select()
-    .eq('ticket', codigoTicket.trim().toUpperCase())
-    .single();
-  if (error) {
+  if (state.consultaSeguimientoEnCurso) return;
+  state.consultaSeguimientoEnCurso = true;
+
+  try {
+    const { data: incidente, error } = await supabaseClient
+      .from('incidentes')
+      .select('ticket,estado,unidad,unidad_codigo,eta_minutos')
+      .eq('ticket', codigoTicket.trim().toUpperCase())
+      .single();
+    if (error) {
+      console.error('No se pudo consultar el seguimiento:', error);
+      if (notificarNoEncontrado) {
+        showToast(error.code === 'PGRST116'
+          ? `El ticket ${codigoTicket} no fue encontrado`
+          : 'No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
+      }
+      return;
+    }
+
+    const badgeEstado = document.getElementById('badge-estado');
+    if (badgeEstado) {
+      badgeEstado.className = `badge-status badge-${incidente.estado}`;
+      badgeEstado.textContent = incidente.estado.replace('_', ' ').toUpperCase();
+    }
+
+    const etapas = ['recibido', 'asignado', 'en_camino', 'atendido'];
+    const indiceActual = etapas.indexOf(incidente.estado);
+    document.querySelectorAll('.timeline-step-item').forEach(stepItem => {
+      const estadoStep = stepItem.getAttribute('data-estado');
+      const idxStep = etapas.indexOf(estadoStep);
+      stepItem.classList.remove('done', 'active');
+      if (idxStep < indiceActual) {
+        stepItem.classList.add('done');
+      } else if (idxStep === indiceActual) {
+        stepItem.classList.add('active');
+      }
+    });
+
+    const panelPatrulla = document.getElementById('info-unidad-panel');
+    if (panelPatrulla) {
+      if (incidente.unidad || incidente.unidad_codigo) {
+        panelPatrulla.classList.remove('hidden');
+        const nombreEl = document.getElementById('unidad-nombre');
+        const codigoEl = document.getElementById('unidad-codigo');
+        const etaEl = document.getElementById('eta-valor');
+        if (nombreEl) nombreEl.textContent = incidente.unidad || 'Patrulla Asignada';
+        if (codigoEl) codigoEl.textContent = incidente.unidad_codigo ? `Código: ${incidente.unidad_codigo}` : 'Serenazgo Chorrillos';
+        if (etaEl) etaEl.textContent = incidente.eta_minutos || '3';
+      } else {
+        panelPatrulla.classList.add('hidden');
+      }
+    }
+  } catch (error) {
     console.error('No se pudo consultar el seguimiento:', error);
     if (notificarNoEncontrado) {
-      showToast(error.code === 'PGRST116'
-        ? `El ticket ${codigoTicket} no fue encontrado`
-        : 'No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
+      showToast('No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
     }
-    return;
-  }
-
-  // Actualizar Badge de Estado
-  const badgeEstado = document.getElementById('badge-estado');
-  if (badgeEstado) {
-    badgeEstado.className = `badge-status badge-${incidente.estado}`;
-    badgeEstado.textContent = incidente.estado.replace('_', ' ').toUpperCase();
-  }
-
-  // Actualizar Stepper Visual (Recibido -> Asignado -> En camino -> Atendido)
-  const etapas = ['recibido', 'asignado', 'en_camino', 'atendido'];
-  const indiceActual = etapas.indexOf(incidente.estado);
-
-  document.querySelectorAll('.timeline-step-item').forEach(stepItem => {
-    const estadoStep = stepItem.getAttribute('data-estado');
-    const idxStep = etapas.indexOf(estadoStep);
-
-    stepItem.classList.remove('done', 'active');
-    if (idxStep < indiceActual) {
-      stepItem.classList.add('done');
-    } else if (idxStep === indiceActual) {
-      stepItem.classList.add('active');
-    }
-  });
-
-  // Mostrar datos de patrulla asignada si ya fue despachada por operador (RF-05)
-  const panelPatrulla = document.getElementById('info-unidad-panel');
-  if (panelPatrulla) {
-    if (incidente.unidad || incidente.unidad_codigo) {
-      panelPatrulla.classList.remove('hidden');
-      const nombreEl = document.getElementById('unidad-nombre');
-      const codigoEl = document.getElementById('unidad-codigo');
-      const etaEl = document.getElementById('eta-valor');
-
-      if (nombreEl) nombreEl.textContent = incidente.unidad || 'Patrulla Asignada';
-      if (codigoEl) codigoEl.textContent = incidente.unidad_codigo ? `Código: ${incidente.unidad_codigo}` : 'Serenazgo Chorrillos';
-      if (etaEl) etaEl.textContent = incidente.eta_minutos || '3';
-    } else {
-      panelPatrulla.classList.add('hidden');
-    }
+  } finally {
+    state.consultaSeguimientoEnCurso = false;
   }
 }
 
@@ -972,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.fotoBlob = file;
         fotoBase64 = null;
         if (labelFoto) labelFoto.textContent = `Foto: ${file.name.substring(0, 18)}...`;
-        fotoDataUrlPromise = leerArchivoComoDataURL(file).then((dataUrl) => {
+        fotoDataUrlPromise = optimizarFotoComoDataURL(file).then((dataUrl) => {
           if (state.fotoBlob === file) {
             fotoBase64 = dataUrl;
             if (previewFoto) {
