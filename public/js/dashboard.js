@@ -309,6 +309,9 @@ window.abrirModalAsignacion = function(ticket) {
   const modalPrioridad = document.getElementById('modal-inc-prioridad');
   const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
   const evidenciaContainer = document.getElementById('modal-evidencia-container');
+  const referenciaCiudadano = document.getElementById('modal-referencia-ciudadano');
+  const descripcionEvidencia = document.getElementById('modal-descripcion-evidencia');
+  const observacionesCiudadano = document.getElementById('modal-observaciones-ciudadano');
   const fotoPreview = document.getElementById('modal-foto-preview');
   const audioPreview = document.getElementById('modal-audio-preview');
 
@@ -324,8 +327,24 @@ window.abrirModalAsignacion = function(ticket) {
     audioPreview.load();
     audioPreview.classList.add('hidden');
   }
+  if (descripcionEvidencia) {
+    descripcionEvidencia.textContent = caso.descripcion_evidencia || '';
+    descripcionEvidencia.classList.toggle('hidden', !caso.descripcion_evidencia);
+  }
+  if (referenciaCiudadano) {
+    referenciaCiudadano.textContent = caso.referencia ? `Referencia: ${caso.referencia}` : '';
+    referenciaCiudadano.classList.toggle('hidden', !caso.referencia);
+  }
+  if (observacionesCiudadano) {
+    observacionesCiudadano.textContent = caso.observaciones_ciudadano
+      ? `Anotaciones del ciudadano:\n${caso.observaciones_ciudadano}`
+      : '';
+    observacionesCiudadano.classList.toggle('hidden', !caso.observaciones_ciudadano);
+  }
 
-  let tieneEvidencia = false;
+  let tieneEvidencia = !!(
+    caso.referencia || caso.descripcion_evidencia || caso.observaciones_ciudadano
+  );
   if (caso.foto && fotoPreview) {
     fotoPreview.src = caso.foto;
     fotoPreview.classList.remove('hidden');

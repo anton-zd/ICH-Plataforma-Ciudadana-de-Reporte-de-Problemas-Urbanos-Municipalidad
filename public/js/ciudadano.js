@@ -32,6 +32,7 @@ const state = {
   gpsObtenido: false,
   modoSeleccionManual: false,
   referenciaTexto: '',
+  descripcionEvidencia: '',
   audioBlob: null,
   audioVozUrl: null,
   mediaRecorderVoz: null,
@@ -43,6 +44,9 @@ const state = {
   fotoBlob: null,
   ticketActual: null,
   dniActual: null,
+  incidentePendiente: null,
+  incidenteSeguimiento: null,
+  verificacionSolicitudCompleta: false,
   mapaObj: null,
   markerObj: null,
   grabandoVoz: false,
@@ -195,12 +199,30 @@ function showToast(mensaje, tipo = 'info') {
  * Síntesis de voz auditiva (Text-To-Speech) para accesibilidad (RF-02)
  */
 function hablarTexto(texto) {
-  if (!('speechSynthesis' in window)) return;
-  window.speechSynthesis.cancel(); // Detener audios previos
+  const sintesis = window.speechSynthesis;
+  if (!sintesis || typeof window.SpeechSynthesisUtterance !== 'function') {
+    showToast('Este navegador no admite lectura por voz.', 'error');
+    return false;
+  }
+
+  sintesis.cancel();
   const mensaje = new SpeechSynthesisUtterance(texto);
-  mensaje.lang = 'es-PE';
+  const vocesEspanol = sintesis.getVoices().filter(voz => voz.lang.toLowerCase().startsWith('es'));
+  const voz = vocesEspanol.find(item => item.lang.toLowerCase() === 'es-pe') ||
+    vocesEspanol.find(item => item.lang.toLowerCase() === 'es-es') ||
+    vocesEspanol[0];
+  if (voz) mensaje.voice = voz;
+  mensaje.lang = voz?.lang || 'es-ES';
   mensaje.rate = 0.95;
-  window.speechSynthesis.speak(mensaje);
+  mensaje.onerror = event => {
+    if (event.error !== 'canceled' && event.error !== 'interrupted') {
+      console.error('No se pudo reproducir la lectura por voz:', event.error);
+      showToast('No se pudo reproducir el audio. Toca “Escuchar” para intentarlo de nuevo.', 'error');
+    }
+  };
+  sintesis.resume();
+  sintesis.speak(mensaje);
+  return true;
 }
 
 /**
@@ -247,6 +269,7 @@ async function autenticarCiudadano(action, mensajeExito) {
     if (sessionError) throw sessionError;
 
     state.dniActual = dni;
+    await sincronizarSolicitudActiva({ avisar: false });
     mostrarPantalla('screen-home');
     document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
     showToast(mensajeExito, 'success');
@@ -259,6 +282,57 @@ async function autenticarCiudadano(action, mensajeExito) {
   } finally {
     if (loginButton) loginButton.disabled = false;
     if (registerButton) registerButton.disabled = false;
+  }
+}
+
+const ESTADOS_SOLICITUD_ACTIVA = ['recibido', 'asignado', 'en_camino'];
+
+async function obtenerSolicitudActiva(dni = state.dniActual) {
+  if (!supabaseClient || !dni) {
+    throw new Error('No se pudo verificar tu solicitud activa.');
+  }
+  const { data, error } = await supabaseClient
+    .from('incidentes')
+    .select('*')
+    .eq('ciudadano_dni', dni)
+    .in('estado', ESTADOS_SOLICITUD_ACTIVA)
+    .order('timestamp', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+function actualizarDisponibilidadReporte() {
+  const solicitud = state.incidentePendiente;
+  const pendingNotice = document.getElementById('home-request-pending');
+  const errorNotice = document.getElementById('home-request-check-error');
+  const pendingTicket = document.getElementById('home-pending-ticket');
+  const btnPedirAyuda = document.getElementById('btn-pedir-ayuda');
+  const btnNuevoReporte = document.getElementById('btn-nuevo-reporte');
+
+  if (pendingNotice) pendingNotice.classList.toggle('hidden', !solicitud);
+  if (errorNotice) errorNotice.classList.toggle('hidden', state.verificacionSolicitudCompleta || !!solicitud);
+  if (pendingTicket) pendingTicket.textContent = solicitud?.ticket || '';
+  if (btnPedirAyuda) {
+    btnPedirAyuda.disabled = !!solicitud || !state.verificacionSolicitudCompleta;
+    btnPedirAyuda.setAttribute('aria-disabled', String(btnPedirAyuda.disabled));
+  }
+  if (btnNuevoReporte) btnNuevoReporte.classList.toggle('hidden', !!solicitud);
+}
+
+async function sincronizarSolicitudActiva({ avisar = true } = {}) {
+  try {
+    state.incidentePendiente = await obtenerSolicitudActiva();
+    state.verificacionSolicitudCompleta = true;
+    actualizarDisponibilidadReporte();
+    return true;
+  } catch (error) {
+    state.verificacionSolicitudCompleta = false;
+    actualizarDisponibilidadReporte();
+    console.error('No se pudo verificar la solicitud activa del ciudadano:', error);
+    if (avisar) showToast('No se pudo verificar si tienes una solicitud activa. Inténtalo de nuevo.', 'error');
+    return false;
   }
 }
 
@@ -654,10 +728,20 @@ async function procesarEnvioReporte() {
     if (!Number.isFinite(state.lat) || !Number.isFinite(state.lng)) {
       throw new Error('Confirma una ubicación válida antes de enviar el reporte.');
     }
+    const solicitudExistente = await obtenerSolicitudActiva(ciudadanoDni);
+    if (solicitudExistente) {
+      state.incidentePendiente = solicitudExistente;
+      state.verificacionSolicitudCompleta = true;
+      actualizarDisponibilidadReporte();
+      mostrarPantalla('screen-home');
+      showToast(`Ya tienes una solicitud activa: ${solicitudExistente.ticket}.`, 'info');
+      return;
+    }
 
     const tipo = CATALOGO_TIPOS[state.tipoSeleccionado] ? state.tipoSeleccionado : 'auxilio';
     const infoTipo = CATALOGO_TIPOS[tipo];
     const inputReferencia = document.getElementById('ref-texto');
+    const inputDescripcion = document.getElementById('descripcion-evidencia');
     state.referenciaTexto = inputReferencia?.value.trim() || state.referenciaTexto.trim();
     const nuevoIncidente = {
       ciudadano_dni: ciudadanoDni,
@@ -669,6 +753,7 @@ async function procesarEnvioReporte() {
         direccionAprox: 'Distrito de Chorrillos, Lima'
       },
       referencia: state.referenciaTexto,
+      descripcion_evidencia: inputDescripcion?.value.trim() || '',
       tiene_audio: !!(state.audioBlob || state.audioEvidenceBlob),
       tiene_audio_evidencia: !!state.audioEvidenceBlob,
       tiene_foto: !!state.fotoBlob,
@@ -687,12 +772,15 @@ async function procesarEnvioReporte() {
     const { data, error } = await supabaseClient
       .from('incidentes')
       .insert([nuevoIncidente])
-      .select('ticket')
+      .select('*')
       .single();
     if (error) throw error;
     if (!data?.ticket) throw new Error('Supabase no devolvió el ticket del nuevo incidente.');
     state.ticketActual = data.ticket;
     state.dniActual = ciudadanoDni;
+    state.incidentePendiente = data;
+    state.verificacionSolicitudCompleta = true;
+    actualizarDisponibilidadReporte();
 
     const ticketNumeroEl = document.getElementById('ticket-numero');
     if (ticketNumeroEl) ticketNumeroEl.textContent = state.ticketActual;
@@ -701,7 +789,13 @@ async function procesarEnvioReporte() {
     hablarTexto('¡Serenazgo en camino! Tu solicitud ha sido recibida con el código ' + state.ticketActual);
   } catch (error) {
     console.error('No se pudo guardar el reporte en Supabase:', error);
-    alert('No se pudo enviar el reporte. Verifica tu conexión y vuelve a intentarlo.');
+    if (error.code === '23505' && error.message?.includes('incidentes_ciudadano_activo_idx')) {
+      await sincronizarSolicitudActiva({ avisar: false });
+      mostrarPantalla('screen-home');
+      showToast(`Ya tienes una solicitud activa${state.incidentePendiente?.ticket ? `: ${state.incidentePendiente.ticket}` : ''}.`, 'info');
+    } else {
+      alert('No se pudo enviar el reporte. Verifica tu conexión y vuelve a intentarlo.');
+    }
   } finally {
     state.envioEnCurso = false;
     if (btn) {
@@ -733,6 +827,18 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
     }
     return;
   }
+
+  state.incidenteSeguimiento = incidente;
+  const solicitudActiva = ESTADOS_SOLICITUD_ACTIVA.includes(incidente.estado);
+  if (solicitudActiva) {
+    state.incidentePendiente = incidente;
+    state.verificacionSolicitudCompleta = true;
+  } else if (state.incidentePendiente?.ticket === incidente.ticket) {
+    state.incidentePendiente = null;
+    state.verificacionSolicitudCompleta = true;
+  }
+  actualizarDisponibilidadReporte();
+  renderizarAccionesSeguimiento(incidente);
 
   // Actualizar Badge de Estado
   const badgeEstado = document.getElementById('badge-estado');
@@ -772,6 +878,89 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
     } else {
       panelPatrulla.classList.add('hidden');
     }
+  }
+
+  if (!solicitudActiva && state.pollingSeguimiento) {
+    clearInterval(state.pollingSeguimiento);
+    state.pollingSeguimiento = null;
+  }
+}
+
+function renderizarAccionesSeguimiento(incidente) {
+  const acciones = document.getElementById('seguimiento-acciones-ciudadano');
+  const anotaciones = document.getElementById('seguimiento-anotaciones');
+  const textoAnotacion = document.getElementById('seguimiento-nueva-anotacion');
+  const botonAnotar = document.getElementById('btn-guardar-anotacion');
+  const botonCancelar = document.getElementById('btn-cancelar-solicitud');
+  const finalizado = document.getElementById('seguimiento-finalizado');
+  const activa = ESTADOS_SOLICITUD_ACTIVA.includes(incidente.estado);
+
+  if (acciones) acciones.classList.toggle('hidden', !activa);
+  if (anotaciones) {
+    anotaciones.textContent = incidente.observaciones_ciudadano || 'Aún no has enviado anotaciones.';
+  }
+  if (textoAnotacion) textoAnotacion.disabled = !activa;
+  if (botonAnotar) botonAnotar.disabled = !activa;
+  if (botonCancelar) botonCancelar.disabled = !activa;
+  if (finalizado) {
+    finalizado.classList.toggle('hidden', activa);
+    finalizado.textContent = incidente.estado === 'cancelado'
+      ? 'La solicitud fue cancelada. Ya puedes enviar una nueva si lo necesitas.'
+      : incidente.estado === 'atendido'
+        ? 'La solicitud fue atendida. Ya puedes enviar una nueva si lo necesitas.'
+        : '';
+  }
+}
+
+async function guardarAnotacionCiudadano() {
+  const boton = document.getElementById('btn-guardar-anotacion');
+  const entrada = document.getElementById('seguimiento-nueva-anotacion');
+  const nota = entrada?.value.trim() || '';
+  const ticket = state.incidenteSeguimiento?.ticket;
+  if (!ticket || !ESTADOS_SOLICITUD_ACTIVA.includes(state.incidenteSeguimiento.estado)) return;
+  if (!nota || nota.length > 500) {
+    showToast('Escribe una anotación de hasta 500 caracteres.', 'error');
+    return;
+  }
+
+  if (boton) boton.disabled = true;
+  try {
+    const { data, error } = await supabaseClient.rpc('agregar_anotacion_ciudadano', {
+      p_ticket: ticket,
+      p_anotacion: nota
+    });
+    if (error) throw error;
+    if (data !== true) throw new Error('No se pudo agregar la anotación. Verifica que la solicitud siga activa.');
+    if (entrada) entrada.value = '';
+    await consultarEstadoTicket(ticket, true);
+    showToast('Anotación enviada a la Central.', 'success');
+  } catch (error) {
+    console.error('No se pudo guardar la anotación ciudadana:', error);
+    showToast(error.message || 'No se pudo guardar la anotación.', 'error');
+  } finally {
+    if (boton) boton.disabled = false;
+  }
+}
+
+async function cancelarSolicitudCiudadano() {
+  const ticket = state.incidenteSeguimiento?.ticket;
+  if (!ticket || !ESTADOS_SOLICITUD_ACTIVA.includes(state.incidenteSeguimiento.estado)) return;
+  if (!window.confirm(`¿Seguro que deseas cancelar la solicitud ${ticket}?`)) return;
+
+  const boton = document.getElementById('btn-cancelar-solicitud');
+  if (boton) boton.disabled = true;
+  try {
+    const { data, error } = await supabaseClient.rpc('cancelar_incidente_ciudadano', {
+      p_ticket: ticket
+    });
+    if (error) throw error;
+    if (data !== true) throw new Error('No se pudo cancelar. La solicitud quizá ya fue atendida o cancelada.');
+    await consultarEstadoTicket(ticket, true);
+    showToast(`La solicitud ${ticket} fue cancelada.`, 'success');
+  } catch (error) {
+    console.error('No se pudo cancelar la solicitud ciudadana:', error);
+    showToast(error.message || 'No se pudo cancelar la solicitud.', 'error');
+    if (boton) boton.disabled = false;
   }
 }
 
@@ -816,11 +1005,28 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. Botón SOS Principal (Toca para iniciar flujo de 3 pasos)
   const btnPedirAyuda = document.getElementById('btn-pedir-ayuda');
   if (btnPedirAyuda) {
-    btnPedirAyuda.addEventListener('click', () => {
+    btnPedirAyuda.addEventListener('click', async () => {
+      if (!await sincronizarSolicitudActiva()) return;
+      if (state.incidentePendiente) {
+        showToast(`Ya tienes una solicitud activa: ${state.incidentePendiente.ticket}.`, 'info');
+        return;
+      }
       vibrar([40]);
       mostrarPantalla('screen-tipo');
     });
   }
+
+  document.getElementById('btn-seguir-pendiente')?.addEventListener('click', () => {
+    const ticket = state.incidentePendiente?.ticket;
+    if (!ticket) return;
+    mostrarPantalla('screen-seguimiento');
+    const inputTicket = document.getElementById('input-ticket');
+    if (inputTicket) inputTicket.value = ticket;
+    activarMonitoreoSeguimiento(ticket);
+  });
+  document.getElementById('btn-reintentar-solicitud')?.addEventListener('click', async () => {
+    await sincronizarSolicitudActiva();
+  });
 
   // 2. Selección de Tipo de Emergencia (Paso 1)
   document.querySelectorAll('.tipo-card').forEach(card => {
@@ -831,6 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     card.addEventListener('keydown', (e) => {
+      if (e.target.closest('.tipo-audio-btn')) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         const tipo = card.getAttribute('data-tipo');
@@ -919,6 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const resNombre = document.getElementById('resumen-tipo-nombre');
       const resUbicacion = document.getElementById('resumen-ubicacion-txt');
       const resRef = document.getElementById('resumen-ref-txt');
+      const descripcion = document.getElementById('descripcion-evidencia');
 
       if (resIcon) {
         resIcon.src = info.icono;
@@ -929,6 +1137,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (resRef) {
         resRef.textContent = state.referenciaTexto ? `Nota: "${state.referenciaTexto}"` : '';
       }
+      if (descripcion) state.descripcionEvidencia = descripcion.value.trim();
 
       mostrarPantalla('screen-resumen');
     });
@@ -1020,20 +1229,30 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnVerSeg) {
     btnVerSeg.addEventListener('click', () => {
       mostrarPantalla('screen-seguimiento');
-      if (state.ticketActual) {
+      const ticket = state.ticketActual || state.incidentePendiente?.ticket;
+      if (ticket) {
         const inputTicket = document.getElementById('input-ticket');
-        if (inputTicket) inputTicket.value = state.ticketActual;
-        activarMonitoreoSeguimiento(state.ticketActual);
+        if (inputTicket) inputTicket.value = ticket;
+        activarMonitoreoSeguimiento(ticket);
       }
     });
   }
 
+  document.getElementById('btn-leer-confirmacion')?.addEventListener('click', () => {
+    hablarTexto(`¡Serenazgo en camino! Tu solicitud ha sido recibida en la Central de Monitoreo. Código de incidente: ${state.ticketActual || ''}.`);
+  });
+
   const btnNuevoRep = document.getElementById('btn-nuevo-reporte');
   if (btnNuevoRep) {
     btnNuevoRep.addEventListener('click', () => {
+      if (state.incidentePendiente) {
+        showToast(`Ya tienes una solicitud activa: ${state.incidentePendiente.ticket}.`, 'info');
+        return;
+      }
       mostrarPantalla('screen-home');
       state.tipoSeleccionado = null;
       state.referenciaTexto = '';
+      state.descripcionEvidencia = '';
       state.fotoBlob = null;
       fotoBase64 = null;
       fotoDataUrlPromise = Promise.resolve(true);
@@ -1044,6 +1263,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const labelFoto = document.getElementById('foto-label-text');
       if (labelFoto) labelFoto.textContent = 'Tomar o adjuntar foto';
+      const descripcion = document.getElementById('descripcion-evidencia');
+      if (descripcion) descripcion.value = '';
+      const referencia = document.getElementById('ref-texto');
+      if (referencia) referencia.value = '';
       borrarGrabacionVoz();
       borrarGrabacionEvidencia();
     });
@@ -1060,12 +1283,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  document.getElementById('btn-guardar-anotacion')?.addEventListener('click', guardarAnotacionCiudadano);
+  document.getElementById('btn-cancelar-solicitud')?.addEventListener('click', cancelarSolicitudCiudadano);
 
   const btnIrSeguimiento = document.getElementById('btn-ir-seguimiento');
   if (btnIrSeguimiento) {
     btnIrSeguimiento.addEventListener('click', () => {
       mostrarPantalla('screen-seguimiento');
-      const lastTicket = state.ticketActual;
+      const lastTicket = state.ticketActual || state.incidentePendiente?.ticket;
       if (lastTicket) {
         const input = document.getElementById('input-ticket');
         if (input) input.value = lastTicket;
@@ -1086,11 +1311,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!supabaseClient) {
     console.error('No se pudo cargar la librería cliente de Supabase.');
   } else {
-    supabaseClient.auth.getSession().then(({ data, error }) => {
+    supabaseClient.auth.getSession().then(async ({ data, error }) => {
       if (error) throw error;
       const user = data.session?.user;
       if (user?.app_metadata?.role === 'ciudadano') {
         state.dniActual = user.app_metadata.dni;
+        await sincronizarSolicitudActiva({ avisar: false });
         mostrarPantalla('screen-home');
         document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
       }

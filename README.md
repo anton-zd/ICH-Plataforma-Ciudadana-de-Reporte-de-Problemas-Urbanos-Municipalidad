@@ -56,6 +56,7 @@ La ubicación GPS requiere un origen seguro (localhost o HTTPS). También puedes
 ## Persistencia y permisos
 
 - Los reportes, estados, asignaciones y evidencias se guardan en la tabla `incidentes`.
+- Un ciudadano puede mantener solo una solicitud activa; las funciones `agregar_anotacion_ciudadano` y `cancelar_incidente_ciudadano` autorizan anotaciones y cancelación del titular. Después de actualizar `supabase/schema.sql`, ejecútalo de nuevo en el SQL Editor; si el índice de solicitud activa falla, revisa y resuelve primero si existe más de un incidente activo para el mismo DNI.
 - El DNI se valida mediante la Edge Function `ciudadanos-auth`. El PIN ciudadano es de 4 dígitos, no se guarda en la tabla `ciudadanos` y se deriva a una contraseña de Supabase Auth con un secreto del servidor. Las cuentas internas de operador/sereno usan el dominio separado `@personal.serenazgo.invalid`; las cuentas ciudadanas se crean en `@ciudadanos.serenazgo.invalid`.
 - Las políticas RLS limitan la lectura de reportes a su titular, al operador autenticado o a la unidad asignada. La clave `anon` del navegador es pública por diseño; nunca debe sustituirse por la `service_role`.
 - El dashboard se suscribe a Supabase Realtime para refrescar incidentes y KPIs al instante; conserva una consulta periódica como respaldo. El seguimiento del ciudadano consulta por número de ticket.
