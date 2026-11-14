@@ -36,6 +36,7 @@ Aplicación web de atención de emergencias de la Municipalidad de Chorrillos. L
      ```
 
    - Los roles deben configurarse como **app metadata** de administración, nunca como user metadata modificable por el cliente. Vuelve a iniciar sesión tras cambiar los metadatos para emitir un JWT actualizado.
+   - En la Central, ingresa el correo exacto creado en Auth (por ejemplo, `Central_1@personal.serenazgo.invalid`) y su contraseña de Supabase Auth. Un error `HTTP 504` indica que Auth agotó el tiempo de respuesta; no confirma que la contraseña sea incorrecta. Si persiste, revisa el estado del proyecto y los logs de Auth en Supabase.
 
 ## Ejecutar localmente
 

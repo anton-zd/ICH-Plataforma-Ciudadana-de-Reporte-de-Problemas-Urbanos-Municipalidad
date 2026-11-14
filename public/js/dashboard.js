@@ -850,7 +850,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         console.error('No se pudo iniciar sesión como operador:', error);
         if (errorEl) {
-          errorEl.textContent = error.message || 'No se pudo iniciar sesión.';
+          errorEl.textContent = error.status === 504
+            ? 'El servicio de autenticación de Supabase agotó el tiempo de respuesta (HTTP 504). Inténtalo nuevamente; si persiste, revisa el estado del proyecto en Supabase.'
+            : error.status >= 500
+              ? `El servicio de autenticación de Supabase no está disponible (HTTP ${error.status}). Inténtalo nuevamente.`
+              : error.message || 'No se pudo iniciar sesión.';
           errorEl.classList.remove('hidden');
         }
       } finally {
