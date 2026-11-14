@@ -309,9 +309,6 @@ window.abrirModalAsignacion = function(ticket) {
   const modalPrioridad = document.getElementById('modal-inc-prioridad');
   const btnConfirmar = document.getElementById('btn-confirmar-asignacion');
   const evidenciaContainer = document.getElementById('modal-evidencia-container');
-  const referenciaCiudadano = document.getElementById('modal-referencia-ciudadano');
-  const descripcionEvidencia = document.getElementById('modal-descripcion-evidencia');
-  const observacionesCiudadano = document.getElementById('modal-observaciones-ciudadano');
   const fotoPreview = document.getElementById('modal-foto-preview');
   const audioPreview = document.getElementById('modal-audio-preview');
 
@@ -327,24 +324,8 @@ window.abrirModalAsignacion = function(ticket) {
     audioPreview.load();
     audioPreview.classList.add('hidden');
   }
-  if (descripcionEvidencia) {
-    descripcionEvidencia.textContent = caso.descripcion_evidencia || '';
-    descripcionEvidencia.classList.toggle('hidden', !caso.descripcion_evidencia);
-  }
-  if (referenciaCiudadano) {
-    referenciaCiudadano.textContent = caso.referencia ? `Referencia: ${caso.referencia}` : '';
-    referenciaCiudadano.classList.toggle('hidden', !caso.referencia);
-  }
-  if (observacionesCiudadano) {
-    observacionesCiudadano.textContent = caso.observaciones_ciudadano
-      ? `Anotaciones del ciudadano:\n${caso.observaciones_ciudadano}`
-      : '';
-    observacionesCiudadano.classList.toggle('hidden', !caso.observaciones_ciudadano);
-  }
 
-  let tieneEvidencia = !!(
-    caso.referencia || caso.descripcion_evidencia || caso.observaciones_ciudadano
-  );
+  let tieneEvidencia = false;
   if (caso.foto && fotoPreview) {
     fotoPreview.src = caso.foto;
     fotoPreview.classList.remove('hidden');
@@ -850,11 +831,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         console.error('No se pudo iniciar sesión como operador:', error);
         if (errorEl) {
-          errorEl.textContent = error.status === 504
-            ? 'El servicio de autenticación de Supabase agotó el tiempo de respuesta (HTTP 504). Inténtalo nuevamente; si persiste, revisa el estado del proyecto en Supabase.'
-            : error.status >= 500
-              ? `El servicio de autenticación de Supabase no está disponible (HTTP ${error.status}). Inténtalo nuevamente.`
-              : error.message || 'No se pudo iniciar sesión.';
+          errorEl.textContent = error.message || 'No se pudo iniciar sesión.';
           errorEl.classList.remove('hidden');
         }
       } finally {

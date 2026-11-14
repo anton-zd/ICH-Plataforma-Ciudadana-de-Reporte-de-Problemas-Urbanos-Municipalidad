@@ -383,17 +383,6 @@
           <h2 class="display-6 fw-bolder text-dark mb-2" id="home-title">¿Necesitas ayuda?</h2>
           <p class="text-muted mb-4 px-2">Toca el botón rojo central para iniciar tu reporte de emergencia en menos de 3 toques.</p>
 
-          <div class="alert alert-warning text-start hidden" id="home-request-pending" role="status">
-            <strong>Ya tienes una solicitud activa.</strong>
-            <span class="d-block small mt-1">Ticket: <span id="home-pending-ticket"></span>. Puedes agregar detalles o cancelarla desde Seguimiento.</span>
-            <button class="btn btn-sm btn-outline-primary mt-2" id="btn-seguir-pendiente" type="button">Ver mi solicitud</button>
-          </div>
-          <div class="alert alert-danger text-start hidden" id="home-request-check-error" role="alert">
-            No se pudo verificar si tienes una solicitud activa. Inténtalo nuevamente antes de crear otro reporte.
-            <span class="d-block small mt-1 hidden" id="home-request-check-error-code"></span>
-            <button class="btn btn-sm btn-outline-danger mt-2 d-block" id="btn-reintentar-solicitud" type="button">Reintentar verificación</button>
-          </div>
-
           <!-- Botón SOS Gigante -->
           <button class="btn-sos" id="btn-pedir-ayuda" aria-label="Pedir Serenazgo de Emergencia ahora">
             <span class="sos-icon" aria-hidden="true">🚨</span>
@@ -474,7 +463,6 @@
             </button>
           </div>
         </div>
-
       </section>
 
       <!-- ══════════════════════════════════════════════════════
@@ -586,11 +574,6 @@
           </div>
           <img id="preview-foto" alt="Vista previa de foto" class="img-fluid rounded mb-2 d-none" style="max-height: 140px; object-fit: cover;">
 
-          <div class="mt-3">
-            <label for="descripcion-evidencia" class="form-label fw-bold small text-dark">Descripción del problema o de la evidencia (Opcional)</label>
-            <textarea id="descripcion-evidencia" class="form-control" rows="3" maxlength="500" placeholder="Describe qué ocurre o qué se observa en la foto/audio (máximo 500 caracteres)." aria-describedby="descripcion-evidencia-ayuda"></textarea>
-            <div class="form-text" id="descripcion-evidencia-ayuda">Hasta 500 caracteres.</div>
-          </div>
         </div>
 
         <!-- Aviso de Privacidad y Anonimato (RN-03) -->
@@ -624,9 +607,6 @@
           </div>
 
           <div class="d-flex flex-column gap-2 mt-3">
-            <button class="btn btn-outline-light rounded-pill py-2" id="btn-leer-confirmacion" type="button" style="min-height: 44px;">
-              <i class="bi bi-volume-up-fill me-1" aria-hidden="true"></i> Escuchar confirmación
-            </button>
             <button class="btn btn-light btn-lg fw-bold rounded-pill py-3 text-success" id="btn-ver-seguimiento" style="min-height: 48px;">
               <i class="bi bi-broadcast me-1"></i> Ver Estado en Vivo
             </button>
@@ -702,19 +682,6 @@
             </div>
           </div>
         </div>
-        <div id="seguimiento-acciones-ciudadano" class="card-modern p-3 mt-3 hidden">
-          <h3 class="h6 fw-bold text-dark">Detalles adicionales</h3>
-          <p class="small text-muted mb-2">Las anotaciones se enviarán a la Central y al Serenazgo asignado.</p>
-          <div id="seguimiento-anotaciones" class="small text-dark text-break mb-3" style="white-space: pre-line;"></div>
-          <label for="seguimiento-nueva-anotacion" class="form-label fw-semibold small">Agregar una anotación</label>
-          <textarea id="seguimiento-nueva-anotacion" class="form-control mb-2" rows="3" maxlength="500" placeholder="Escribe el detalle que olvidaste incluir." aria-describedby="seguimiento-anotacion-ayuda"></textarea>
-          <div id="seguimiento-anotacion-ayuda" class="form-text mb-3">Máximo 500 caracteres.</div>
-          <div class="d-flex flex-column gap-2">
-            <button id="btn-guardar-anotacion" class="btn btn-touch-primary w-100" type="button">Enviar anotación</button>
-            <button id="btn-cancelar-solicitud" class="btn btn-outline-danger w-100" type="button">Cancelar solicitud</button>
-          </div>
-        </div>
-        <div id="seguimiento-finalizado" class="alert alert-secondary mt-3 hidden" role="status"></div>
       </section>
 
     </main>

@@ -17,7 +17,7 @@ Aplicación web de atención de emergencias de la Municipalidad de Chorrillos. L
    ```
 
    Supabase proporciona `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al entorno Edge. La clave `service_role` nunca debe copiarse a archivos del sitio. La función limita los intentos fallidos por DNI y dirección IP.
-   La función usa la lista CORS mantenida por `supabase-js`; vuelve a desplegarla con el comando anterior después de cualquier cambio de CORS. Si la llamada falla, confirma que vinculaste el proyecto correcto (`supabase projects list` / `supabase link`) y revisa los logs de `ciudadanos-auth` en Supabase Dashboard. El login del navegador vence a los 15 segundos; los logs muestran la duración de cada consulta de base de datos/Auth, sin registrar DNI ni PIN.
+   La función usa la lista CORS mantenida por `supabase-js`; vuelve a desplegarla con el comando anterior después de cualquier cambio de CORS. Si la llamada falla, confirma que vinculaste el proyecto correcto (`supabase projects list` / `supabase link`) y revisa los logs de `ciudadanos-auth` en Supabase Dashboard.
 
 5. Crea los usuarios de personal desde Supabase Auth:
    - Usa correos `operador1@personal.serenazgo.invalid` y `sereno1@personal.serenazgo.invalid` (o los nombres de usuario que prefieras).
@@ -36,7 +36,6 @@ Aplicación web de atención de emergencias de la Municipalidad de Chorrillos. L
      ```
 
    - Los roles deben configurarse como **app metadata** de administración, nunca como user metadata modificable por el cliente. Vuelve a iniciar sesión tras cambiar los metadatos para emitir un JWT actualizado.
-   - En la Central, ingresa el correo exacto creado en Auth (por ejemplo, `Central_1@personal.serenazgo.invalid`) y su contraseña de Supabase Auth. Un error `HTTP 504` indica que Auth agotó el tiempo de respuesta; no confirma que la contraseña sea incorrecta. Si persiste, revisa el estado del proyecto y los logs de Auth en Supabase.
 
 ## Ejecutar localmente
 
@@ -57,7 +56,6 @@ La ubicación GPS requiere un origen seguro (localhost o HTTPS). También puedes
 ## Persistencia y permisos
 
 - Los reportes, estados, asignaciones y evidencias se guardan en la tabla `incidentes`.
-- Un ciudadano puede mantener solo una solicitud activa; `obtener_solicitud_activa_ciudadano` consulta la solicitud del titular y las funciones `agregar_anotacion_ciudadano` y `cancelar_incidente_ciudadano` autorizan anotaciones y cancelación. Después de actualizar `supabase/schema.sql`, ejecútalo de nuevo en el SQL Editor; si el índice de solicitud activa falla, revisa y resuelve primero si existe más de un incidente activo para el mismo DNI.
 - El DNI se valida mediante la Edge Function `ciudadanos-auth`. El PIN ciudadano es de 4 dígitos, no se guarda en la tabla `ciudadanos` y se deriva a una contraseña de Supabase Auth con un secreto del servidor. Las cuentas internas de operador/sereno usan el dominio separado `@personal.serenazgo.invalid`; las cuentas ciudadanas se crean en `@ciudadanos.serenazgo.invalid`.
 - Las políticas RLS limitan la lectura de reportes a su titular, al operador autenticado o a la unidad asignada. La clave `anon` del navegador es pública por diseño; nunca debe sustituirse por la `service_role`.
 - El dashboard se suscribe a Supabase Realtime para refrescar incidentes y KPIs al instante; conserva una consulta periódica como respaldo. El seguimiento del ciudadano consulta por número de ticket.

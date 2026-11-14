@@ -167,13 +167,9 @@ function renderizarEvidenciasAsignacion(caso) {
   if (!container || !referencia || !fotoContainer || !foto ||
       !audioReferenciaContainer || !audioReferencia || !audioEvidenciaContainer || !audioEvidencia) return;
 
-  const notas = [
-    caso.referencia || caso.referencia_texto ? `Referencia: ${caso.referencia || caso.referencia_texto}` : '',
-    caso.descripcion_evidencia ? `Descripción: ${caso.descripcion_evidencia}` : '',
-    caso.observaciones_ciudadano ? `Anotaciones del ciudadano:\n${caso.observaciones_ciudadano}` : ''
-  ].filter(Boolean);
-  referencia.textContent = notas.join('\n\n');
-  referencia.classList.toggle('hidden', notas.length === 0);
+  const nota = String(caso.referencia || caso.referencia_texto || '').trim();
+  referencia.textContent = nota ? `Anotación: ${nota}` : '';
+  referencia.classList.toggle('hidden', !nota);
 
   const fotoSrc = caso.foto || caso.evidencia_foto;
   foto.removeAttribute('src');
@@ -191,7 +187,7 @@ function renderizarEvidenciasAsignacion(caso) {
     if (src) player.src = src;
   });
 
-  container.classList.toggle('hidden', !(notas.length || fotoSrc || audioReferenciaSrc || audioEvidenciaSrc));
+  container.classList.toggle('hidden', !(nota || fotoSrc || audioReferenciaSrc || audioEvidenciaSrc));
 }
 
 function limpiarEvidenciasAsignacion() {
