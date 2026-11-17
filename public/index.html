@@ -18,6 +18,7 @@
 
   <!-- Bootstrap Icons vía CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/css/shared.css">
 
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
@@ -639,7 +640,7 @@
     .btn-back-to-top {
       position: fixed;
       bottom: 25px;
-      right: 25px;
+      right: 4.75rem;
       width: 48px;
       height: 48px;
       border-radius: 50%;
@@ -669,8 +670,22 @@
 </head>
 <body>
 
-  <!-- Skip-link para lectores de pantalla (Accesibilidad WCAG 2.1 AA) -->
+  <!-- Skip-link accesible -->
   <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
+  <details class="accessibility-widget">
+    <summary aria-label="Abrir preferencias de accesibilidad"><i class="bi bi-universal-access-circle" aria-hidden="true"></i></summary>
+    <div class="accessibility-panel" role="group" aria-label="Preferencias de accesibilidad">
+      <h2>Accesibilidad</h2>
+      <div class="accessibility-font-controls" role="group" aria-label="Tamaño del texto">
+        <button type="button" data-font-size="normal" aria-pressed="true">A- <span>Normal 100%</span></button>
+        <button type="button" data-font-size="large" aria-pressed="false">A+ <span>Grande 115%</span></button>
+        <button type="button" data-font-size="extra-large" aria-pressed="false">A++ <span>Extra grande 130%</span></button>
+      </div>
+      <button type="button" data-accessibility-toggle="highContrast" aria-pressed="false">Alto Contraste</button>
+      <button type="button" data-accessibility-toggle="voiceGuide" aria-pressed="false">Lectura por Voz (Guía Auditiva)</button>
+    </div>
+  </details>
 
   <!-- ════════════════════════════════════════════════════════
        1. NAVEGACIÓN (NAVBAR FIJA CON SCROLL DINÁMICO)
@@ -1130,6 +1145,7 @@
   </button>
 
   <!-- Bootstrap 5.3 Bundle con Popper vía CDN -->
+  <script src="/js/shared-accessibility.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
   <!-- ════════════════════════════════════════════════════════

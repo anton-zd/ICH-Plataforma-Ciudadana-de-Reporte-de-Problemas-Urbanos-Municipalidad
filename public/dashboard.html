@@ -242,6 +242,20 @@
 </head>
 <body>
 
+  <details class="accessibility-widget">
+    <summary aria-label="Abrir preferencias de accesibilidad"><i class="bi bi-universal-access-circle" aria-hidden="true"></i></summary>
+    <div class="accessibility-panel" role="group" aria-label="Preferencias de accesibilidad">
+      <h2>Accesibilidad</h2>
+      <div class="accessibility-font-controls" role="group" aria-label="Tamaño del texto">
+        <button type="button" data-font-size="normal" aria-pressed="true">A- <span>Normal 100%</span></button>
+        <button type="button" data-font-size="large" aria-pressed="false">A+ <span>Grande 115%</span></button>
+        <button type="button" data-font-size="extra-large" aria-pressed="false">A++ <span>Extra grande 130%</span></button>
+      </div>
+      <button type="button" data-accessibility-toggle="highContrast" aria-pressed="false">Alto Contraste</button>
+      <button type="button" data-accessibility-toggle="voiceGuide" aria-pressed="false">Lectura por Voz (Guía Auditiva)</button>
+    </div>
+  </details>
+
   <!-- Selector de rol para evaluación rápida -->
   <aside class="demo-role-switcher" aria-label="Cambiar rol del sistema">
     <span class="demo-title">
@@ -363,6 +377,10 @@
             <i class="bi bi-bar-chart-fill text-info"></i>
             <span>Estadísticas</span>
           </button>
+          <button class="nav-item-dashboard" data-view="rendimiento">
+            <i class="bi bi-speedometer2"></i>
+            <span>Rendimiento</span>
+          </button>
         </nav>
 
         <!-- Contenido Central Principal -->
@@ -452,8 +470,11 @@
           <!-- VISTA: HISTORIAL -->
           <section class="view hidden" id="view-historial">
             <div class="card-modern">
-              <div class="card-modern-header">
+              <div class="card-modern-header flex-wrap gap-2">
                 <h2 class="h5 mb-0 fw-bold text-dark">📋 Historial de Incidentes Atendidos</h2>
+                <button id="btn-exportar-excel" class="btn btn-success fw-bold d-inline-flex align-items-center gap-2">
+                  <i class="bi bi-file-earmark-excel-fill" aria-hidden="true"></i> Descargar Excel
+                </button>
               </div>
               <div class="table-responsive p-3">
                 <table class="table table-hover align-middle">
@@ -482,12 +503,12 @@
                 <h2 class="h5 mb-0 fw-bold text-dark">📊 Reporte y Métricas de Rendimiento</h2>
                 <div class="d-flex flex-wrap gap-2 ms-auto">
                   <div>
-                    <label class="form-label small fw-bold mb-1" for="filtro-periodo-estadisticas">Periodo</label>
-                    <select class="form-select form-select-sm" id="filtro-periodo-estadisticas">
-                      <option value="hoy">Hoy</option>
-                      <option value="semana">Esta semana</option>
-                      <option value="mes">Este mes</option>
-                    </select>
+                    <label class="form-label small fw-bold mb-1" for="filtro-fecha-inicio">Desde</label>
+                    <input type="date" class="form-control form-control-sm" id="filtro-fecha-inicio">
+                  </div>
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="filtro-fecha-fin">Hasta</label>
+                    <input type="date" class="form-control form-control-sm" id="filtro-fecha-fin">
                   </div>
                   <div>
                     <label class="form-label small fw-bold mb-1" for="filtro-sector-estadisticas">Sector</label>
@@ -502,6 +523,7 @@
                 </div>
               </div>
               <div class="p-4">
+                <div id="estadisticas-filtro-error" class="alert alert-warning small hidden" role="status" aria-live="polite"></div>
                 <div id="estadisticas-error" class="alert alert-warning small hidden" role="status"></div>
                 <p class="alert alert-info py-2 small" role="note">
                   Los sectores se estiman a partir de las coordenadas GPS y son referenciales; no representan límites oficiales.
@@ -537,21 +559,72 @@
                   <div class="col-12 col-xl-6">
                     <div class="card-modern h-100">
                       <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Reportes por Categoría</h3></div>
-                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-categorias" aria-label="Gráfico circular de reportes por categoría"></canvas></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-categorias" role="img" tabindex="0" aria-label="Gráfico circular de reportes por categoría"></canvas></div>
                     </div>
                   </div>
                   <div class="col-12 col-xl-6">
                     <div class="card-modern h-100">
                       <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Reportes por Sector</h3></div>
-                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-sectores" aria-label="Gráfico de barras de reportes por sector"></canvas></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-sectores" role="img" tabindex="0" aria-label="Gráfico de barras de reportes por sector"></canvas></div>
                     </div>
                   </div>
                   <div class="col-12">
                     <div class="card-modern">
                       <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Evolución Temporal de Reportes</h3></div>
-                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-tendencia" aria-label="Gráfico de líneas de reportes en el tiempo"></canvas></div>
+                      <div class="p-3 analytics-chart-wrap"><canvas id="grafico-tendencia" role="img" tabindex="0" aria-label="Gráfico de líneas de reportes en el tiempo"></canvas></div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- VISTA: RENDIMIENTO DE PATRULLEROS -->
+          <section class="view hidden" id="view-rendimiento">
+            <div class="card-modern mb-3">
+              <div class="card-modern-header flex-wrap gap-3">
+                <h2 class="h5 mb-0 fw-bold text-dark"><i class="bi bi-speedometer2 me-1" aria-hidden="true"></i>Rendimiento de Patrulleros</h2>
+                <div class="d-flex flex-wrap gap-2 ms-auto">
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="filtro-unidad-rendimiento">Unidad</label>
+                    <select class="form-select form-select-sm" id="filtro-unidad-rendimiento">
+                      <option value="todas">Todas las unidades</option>
+                      <option value="SR-01">SR-01</option>
+                      <option value="SR-02">SR-02</option>
+                      <option value="SR-03">SR-03</option>
+                      <option value="SR-04">SR-04</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="rendimiento-fecha-inicio">Desde</label>
+                    <input type="date" class="form-control form-control-sm" id="rendimiento-fecha-inicio">
+                  </div>
+                  <div>
+                    <label class="form-label small fw-bold mb-1" for="rendimiento-fecha-fin">Hasta</label>
+                    <input type="date" class="form-control form-control-sm" id="rendimiento-fecha-fin">
+                  </div>
+                </div>
+              </div>
+              <div class="p-3 p-lg-4">
+                <div id="rendimiento-filtro-error" class="alert alert-warning small hidden" role="status" aria-live="polite"></div>
+                <div id="rendimiento-chart-error" class="alert alert-warning small hidden" role="status" aria-live="polite"></div>
+                <div class="row g-3 mb-4">
+                  <div class="col-6 col-xl-3"><div class="stat-card-op normal h-100"><div class="stat-value" id="kpi-rend-asignados">0</div><div class="stat-label">Total Asignados</div></div></div>
+                  <div class="col-6 col-xl-3"><div class="stat-card-op exito h-100"><div class="stat-value" id="kpi-rend-atendidos">0</div><div class="stat-label">Total Atendidos</div></div></div>
+                  <div class="col-6 col-xl-3"><div class="stat-card-op info h-100"><div class="stat-value" id="kpi-rend-efectividad">0%</div><div class="stat-label">Tasa de Efectividad</div></div></div>
+                  <div class="col-6 col-xl-3"><div class="stat-card-op urgente h-100"><div class="stat-value" id="kpi-rend-tiempo">—</div><div class="stat-label">Tiempo Promedio de Resolución (min)</div></div></div>
+                </div>
+                <div class="row g-3 mb-4">
+                  <div class="col-12"><div class="card-modern"><div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Estados por unidad</h3></div><div class="p-3 analytics-chart-wrap"><canvas id="grafico-rendimiento-unidades" role="img" tabindex="0" aria-label="Incidentes atendidos, en curso y cancelados por unidad"></canvas></div></div></div>
+                  <div class="col-12 col-xl-6"><div class="card-modern h-100"><div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Tiempo promedio por unidad</h3></div><div class="p-3 analytics-chart-wrap"><canvas id="grafico-rendimiento-tiempos" role="img" tabindex="0" aria-label="Tiempo promedio de atención en minutos por unidad"></canvas></div></div></div>
+                  <div class="col-12 col-xl-6"><div class="card-modern h-100"><div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Tipos de incidentes atendidos</h3></div><div class="p-3 analytics-chart-wrap"><canvas id="grafico-rendimiento-tipos" role="img" tabindex="0" aria-label="Distribución de incidentes atendidos por tipo"></canvas></div></div></div>
+                </div>
+                <h3 class="h6 fw-bold mb-2">Resumen individual por patrullero</h3>
+                <div class="table-responsive">
+                  <table class="table table-hover align-middle">
+                    <thead class="table-light"><tr><th>Código</th><th>Nombre de Patrulla</th><th>Sector</th><th>Asignados</th><th>Atendidos</th><th>Cancelados</th><th>Efectividad (%)</th><th>Tiempo Promedio (min)</th></tr></thead>
+                    <tbody id="tabla-rendimiento-tbody"><tr><td colspan="8" class="text-center py-4 text-muted">Cargando rendimiento…</td></tr></tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -582,6 +655,7 @@
 
         <div id="modal-evidencia-container" class="mb-3 hidden p-3 bg-white border rounded-3">
           <label class="form-label fw-bold small text-muted text-uppercase mb-2">Evidencia Adjunta de Campo:</label>
+          <p id="modal-nota-evidencia" class="small text-dark mb-2 hidden"></p>
           <div class="d-flex flex-column gap-2">
             <img id="modal-foto-preview" class="img-fluid rounded border hidden" alt="Evidencia fotográfica del ciudadano" style="max-height: 220px; object-fit: cover;">
             <audio id="modal-audio-preview" controls class="w-100 hidden"></audio>
@@ -639,10 +713,12 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Leaflet & JS -->
+  <script src="/js/shared-accessibility.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="/js/dashboard.js"></script>
 </body>
 </html>

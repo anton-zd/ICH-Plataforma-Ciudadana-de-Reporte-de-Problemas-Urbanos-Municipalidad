@@ -31,6 +31,7 @@ const state = {
   gpsObtenido: false,
   modoSeleccionManual: false,
   referenciaTexto: '',
+  notaEvidencia: '',
   audioBlob: null,
   audioVozUrl: null,
   mediaRecorderVoz: null,
@@ -695,6 +696,8 @@ async function procesarEnvioReporte() {
     const infoTipo = CATALOGO_TIPOS[tipo];
     const inputReferencia = document.getElementById('ref-texto');
     state.referenciaTexto = inputReferencia?.value.trim() || state.referenciaTexto.trim();
+    const inputNotaEvidencia = document.getElementById('evidencia-texto');
+    state.notaEvidencia = inputNotaEvidencia?.value.trim() || '';
     const nuevoIncidente = {
       ciudadano_dni: ciudadanoDni,
       tipo,
@@ -712,6 +715,7 @@ async function procesarEnvioReporte() {
       audio: null,
       audio_referencia: audioVozBase64,
       audio_evidencia: audioEvidenceBase64,
+      nota_evidencia: state.notaEvidencia,
       estado: 'recibido',
       unidad_asignada: null,
       unidad: null,
@@ -1004,6 +1008,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 6. Evidencia Fotográfica y Sonora (Paso 3)
   const inputFoto = document.getElementById('evidencia-foto');
+  const inputNotaEvidencia = document.getElementById('evidencia-texto');
+  inputNotaEvidencia?.addEventListener('input', () => {
+    state.notaEvidencia = inputNotaEvidencia.value;
+  });
   const previewFoto = document.getElementById('preview-foto');
   const labelFoto = document.getElementById('foto-label-text');
 
@@ -1076,6 +1084,8 @@ document.addEventListener('DOMContentLoaded', () => {
       mostrarPantalla('screen-home');
       state.tipoSeleccionado = null;
       state.referenciaTexto = '';
+      state.notaEvidencia = '';
+      if (inputNotaEvidencia) inputNotaEvidencia.value = '';
       state.fotoBlob = null;
       fotoBase64 = null;
       fotoDataUrlPromise = Promise.resolve(true);

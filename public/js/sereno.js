@@ -76,7 +76,7 @@ async function verificarAsignacionesAgente() {
   try {
     const { data: miCaso, error } = await supabaseClient
       .from('incidentes')
-      .select('ticket,tipo,referencia,ubicacion,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,timestamp,tiene_foto,tiene_audio,tiene_audio_evidencia')
+      .select('ticket,tipo,referencia,nota_evidencia,ubicacion,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,timestamp,tiene_foto,tiene_audio,tiene_audio_evidencia')
       .eq('unidad_asignada', serenoState.agenteCodigo)
       .in('estado', ['asignado', 'en_camino'])
       .order('timestamp', { ascending: false })
@@ -127,7 +127,7 @@ async function cargarEvidenciasAsignacion(ticket) {
   try {
     const { data, error } = await supabaseClient
       .from('incidentes')
-      .select('foto,audio,audio_referencia,audio_evidencia')
+      .select('foto,audio,audio_referencia,audio_evidencia,nota_evidencia')
       .eq('ticket', ticket)
       .maybeSingle();
     if (error) throw error;
@@ -199,6 +199,7 @@ function renderizarEmergenciaAsignada(caso) {
 function renderizarEvidenciasAsignacion(caso) {
   const container = document.getElementById('asignacion-evidencias');
   const referencia = document.getElementById('asignacion-referencia');
+  const notaEvidencia = document.getElementById('asignacion-nota-evidencia');
   const fotoContainer = document.getElementById('asignacion-foto-container');
   const foto = document.getElementById('asignacion-foto');
   const audioReferenciaContainer = document.getElementById('asignacion-audio-referencia-container');
@@ -206,12 +207,15 @@ function renderizarEvidenciasAsignacion(caso) {
   const audioEvidenciaContainer = document.getElementById('asignacion-audio-evidencia-container');
   const audioEvidencia = document.getElementById('asignacion-audio-evidencia');
 
-  if (!container || !referencia || !fotoContainer || !foto ||
+  if (!container || !referencia || !notaEvidencia || !fotoContainer || !foto ||
       !audioReferenciaContainer || !audioReferencia || !audioEvidenciaContainer || !audioEvidencia) return;
 
   const nota = String(caso.referencia || caso.referencia_texto || '').trim();
   referencia.textContent = nota ? `Anotación: ${nota}` : '';
   referencia.classList.toggle('hidden', !nota);
+  const notaIncidente = String(caso.nota_evidencia || '').trim();
+  notaEvidencia.textContent = notaIncidente ? `Evidencia escrita: ${notaIncidente}` : '';
+  notaEvidencia.classList.toggle('hidden', !notaIncidente);
 
   const fotoSrc = caso.foto || caso.evidencia_foto;
   foto.removeAttribute('src');
@@ -229,7 +233,7 @@ function renderizarEvidenciasAsignacion(caso) {
     if (src) player.src = src;
   });
 
-  container.classList.toggle('hidden', !(nota || fotoSrc || audioReferenciaSrc || audioEvidenciaSrc));
+  container.classList.toggle('hidden', !(nota || notaIncidente || fotoSrc || audioReferenciaSrc || audioEvidenciaSrc));
 }
 
 function limpiarEvidenciasAsignacion() {

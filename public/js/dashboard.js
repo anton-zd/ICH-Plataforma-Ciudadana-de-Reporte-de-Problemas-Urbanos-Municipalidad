@@ -30,6 +30,7 @@ const dashboardState = {
   refreshInFlight: false,
   pendingStatsRefresh: false,
   evidenceLoadsInFlight: new Set(),
+  casesSignature: null,
 };
 
 // Flota de Unidades de Serenazgo de Chorrillos disponibles para despacho
@@ -72,11 +73,18 @@ async function cargarIncidentes() {
     }
     const { data, error } = await supabaseClient
       .from('incidentes')
-      .select('id,ticket,ciudadano_dni,tipo,prioridad,ubicacion,referencia,tiene_audio,tiene_audio_evidencia,tiene_foto,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,observaciones,timestamp,updated_at,atendido_at')
+      .select('id,ticket,ciudadano_dni,tipo,prioridad,ubicacion,referencia,nota_evidencia,tiene_audio,tiene_audio_evidencia,tiene_foto,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,observaciones,timestamp,updated_at,atendido_at')
       .order('timestamp', { ascending: false });
     if (error) throw error;
+    const signature = JSON.stringify((data || []).map(caso => [
+      caso.ticket, caso.estado, caso.unidad_asignada, caso.unidad_codigo,
+      caso.timestamp, caso.updated_at, caso.atendido_at
+    ]));
+    const dataChanged = signature !== dashboardState.casesSignature;
+    dashboardState.casesSignature = signature;
     dashboardState.casos = data || [];
     renderizarDashboard();
+    return dataChanged;
   } catch (error) {
     console.error('No se pudieron cargar los incidentes desde Supabase:', error);
     throw error;
@@ -91,7 +99,7 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
   dashboardState.refreshInFlight = true;
 
   try {
-    await cargarIncidentes();
+    const dataChanged = await cargarIncidentes();
     dashboardState.lastLoadError = null;
     if (document.getElementById('view-historial')?.classList.contains('active')) {
       renderizarHistorial();
@@ -99,6 +107,9 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
     if (actualizarEstadisticas &&
         document.getElementById('view-estadisticas')?.classList.contains('active')) {
       renderizarEstadisticas();
+    }
+    if (dataChanged && document.getElementById('view-rendimiento')?.classList.contains('active')) {
+      renderizarRendimiento();
     }
   } catch (error) {
     if (dashboardState.lastLoadError !== error.message) {
@@ -285,9 +296,15 @@ function actualizarMetricas(todosLosCasos) {
 
 function renderizarEvidenciaModal(caso) {
   const evidenciaContainer = document.getElementById('modal-evidencia-container');
+  const notaPreview = document.getElementById('modal-nota-evidencia');
   const fotoPreview = document.getElementById('modal-foto-preview');
   const audioPreview = document.getElementById('modal-audio-preview');
+  const nota = String(caso.nota_evidencia || '').trim();
 
+  if (notaPreview) {
+    notaPreview.textContent = nota ? `Evidencia escrita: ${nota}` : '';
+    notaPreview.classList.toggle('hidden', !nota);
+  }
   if (fotoPreview) {
     fotoPreview.removeAttribute('src');
     fotoPreview.classList.toggle('hidden', !caso.foto);
@@ -301,7 +318,7 @@ function renderizarEvidenciaModal(caso) {
     if (caso.audio) audioPreview.src = caso.audio;
   }
   if (evidenciaContainer) {
-    evidenciaContainer.classList.toggle('hidden', !(caso.foto || caso.audio));
+    evidenciaContainer.classList.toggle('hidden', !(nota || caso.foto || caso.audio));
   }
 }
 
@@ -311,7 +328,7 @@ async function cargarEvidenciaModal(ticket) {
   try {
     const { data: evidencia, error } = await supabaseClient
       .from('incidentes')
-      .select('foto,audio,audio_referencia,audio_evidencia')
+      .select('foto,audio,audio_referencia,audio_evidencia,nota_evidencia')
       .eq('ticket', ticket)
       .maybeSingle();
     if (error) throw error;
@@ -589,6 +606,8 @@ function cambiarVista(viewId) {
     renderizarUnidadesGrid();
   } else if (viewId === 'estadisticas') {
     renderizarEstadisticas();
+  } else if (viewId === 'rendimiento') {
+    renderizarRendimiento();
   }
 }
 
@@ -648,6 +667,79 @@ function renderizarHistorial() {
       <td class="small text-muted">${c.atendido_at ? new Date(c.atendido_at).toLocaleString('es-PE') : 'Reciente'}</td>
       <td class="small">${escaparHTML(c.observaciones || 'Atendido satisfactoriamente')}</td>
     </tr>`).join('');
+}
+
+function exportarHistorialExcel() {
+  const casos = obtenerCasos().filter(caso =>
+    ['atendido', 'cancelado', 'recibido', 'asignado', 'en_camino'].includes(caso.estado)
+  );
+  const limitarTextoCelda = valor => {
+    let texto = String(valor ?? '').slice(0, 32767);
+    if (/^[=+\-@\t\r]/.test(texto)) texto = `'${texto}`;
+    return texto;
+  };
+  const fechaLocal = valor => {
+    const fecha = valor ? new Date(valor) : null;
+    return fecha && !Number.isNaN(fecha.getTime()) ? fecha.toLocaleString('es-PE') : '';
+  };
+  const filas = casos.map(caso => ({
+    'Ticket': limitarTextoCelda(caso.ticket),
+    'DNI Ciudadano': limitarTextoCelda(caso.ciudadano_dni),
+    'Tipo': limitarTextoCelda(caso.tipo),
+    'Prioridad': caso.prioridad === 1 ? 'Alta' : 'Normal',
+    'Estado': limitarTextoCelda(caso.estado),
+    'Sector Referencial': limitarTextoCelda(obtenerSectorReferencial(caso)),
+    'Latitud': caso.ubicacion?.lat != null && Number.isFinite(Number(caso.ubicacion.lat)) ? Number(caso.ubicacion.lat) : '',
+    'Longitud': caso.ubicacion?.lng != null && Number.isFinite(Number(caso.ubicacion.lng)) ? Number(caso.ubicacion.lng) : '',
+    'Referencia Ubicación': limitarTextoCelda(caso.referencia),
+    'Nota de Evidencia': limitarTextoCelda(caso.nota_evidencia),
+    'Tiene Foto (Sí/No)': caso.tiene_foto ? 'Sí' : 'No',
+    'Tiene Audio (Sí/No)': caso.tiene_audio || caso.tiene_audio_evidencia ? 'Sí' : 'No',
+    'Unidad Asignada': limitarTextoCelda(caso.unidad || caso.unidad_codigo || caso.unidad_asignada),
+    'Fecha de Registro': fechaLocal(caso.timestamp),
+    'Fecha de Cierre': fechaLocal(caso.atendido_at),
+    'Observaciones de Campo': limitarTextoCelda(caso.observaciones)
+  }));
+  const fechaArchivo = fechaLocalComoInput(new Date());
+  const nombreBase = `Historial_Serenazgo_Chorrillos_${fechaArchivo}`;
+
+  if (window.XLSX?.utils?.json_to_sheet && typeof window.XLSX.writeFile === 'function') {
+    try {
+      const worksheet = window.XLSX.utils.json_to_sheet(filas);
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Historial');
+      window.XLSX.writeFile(workbook, `${nombreBase}.xlsx`);
+      notify('El historial se descargó en formato Excel.', 'success');
+      return;
+    } catch (error) {
+      console.warn('No se pudo crear el archivo Excel; se descargará como CSV:', error);
+    }
+  }
+
+  const cabeceras = Object.keys(filas[0] || {
+    'Ticket': '', 'DNI Ciudadano': '', 'Tipo': '', 'Prioridad': '', 'Estado': '',
+    'Sector Referencial': '', 'Latitud': '', 'Longitud': '', 'Referencia Ubicación': '',
+    'Nota de Evidencia': '', 'Tiene Foto (Sí/No)': '', 'Tiene Audio (Sí/No)': '',
+    'Unidad Asignada': '', 'Fecha de Registro': '', 'Fecha de Cierre': '',
+    'Observaciones de Campo': ''
+  });
+  const csvEscape = valor => `"${String(valor ?? '').replace(/"/g, '""')}"`;
+  const contenidoCsv = [cabeceras, ...filas]
+    .map(fila => cabeceras.map(cabecera =>
+      csvEscape(Array.isArray(fila) ? fila[cabeceras.indexOf(cabecera)] : fila[cabecera])
+    ).join(','))
+    .join('\r\n');
+  const blob = new Blob([`\uFEFF${contenidoCsv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = `${nombreBase}.csv`;
+  enlace.hidden = true;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  notify('Excel no está disponible; el historial se descargó como CSV UTF-8.', 'info');
 }
 
 function renderizarUnidadesGrid() {
@@ -719,63 +811,110 @@ function obtenerFechaIncidente(caso) {
   return Number.isNaN(fecha.getTime()) ? null : fecha;
 }
 
-function obtenerRangoEstadisticas(periodo, ahora = new Date()) {
-  const inicio = new Date(ahora);
-  inicio.setHours(0, 0, 0, 0);
+function fechaLocalComoInput(fecha) {
+  const anio = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+  const dia = String(fecha.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+}
 
-  if (periodo === 'semana') {
-    const diasDesdeLunes = (inicio.getDay() + 6) % 7;
-    inicio.setDate(inicio.getDate() - diasDesdeLunes);
-  } else if (periodo === 'mes') {
-    inicio.setDate(1);
+function configurarFiltrosFecha() {
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const fechaHoy = fechaLocalComoInput(hoy);
+  const fechaInicioMes = fechaLocalComoInput(inicioMes);
+  [
+    ['filtro-fecha-inicio', fechaInicioMes],
+    ['rendimiento-fecha-inicio', fechaInicioMes],
+    ['filtro-fecha-fin', fechaHoy],
+    ['rendimiento-fecha-fin', fechaHoy]
+  ].forEach(([id, valor]) => {
+    const input = document.getElementById(id);
+    if (input && !input.value) input.value = valor;
+  });
+}
+
+function obtenerRangoFechas(idInicio, idFin, idError) {
+  const inputInicio = document.getElementById(idInicio);
+  const inputFin = document.getElementById(idFin);
+  const errorEl = document.getElementById(idError);
+  if (!inputInicio?.value || !inputFin?.value) {
+    if (errorEl) {
+      errorEl.textContent = 'Selecciona las fechas Desde y Hasta para consultar el periodo.';
+      errorEl.classList.remove('hidden');
+    }
+    return null;
   }
 
-  const fin = new Date(inicio);
-  if (periodo === 'hoy') fin.setDate(fin.getDate() + 1);
-  else if (periodo === 'semana') fin.setDate(fin.getDate() + 7);
-  else fin.setMonth(fin.getMonth() + 1);
+  const inicio = new Date(`${inputInicio.value}T00:00:00`);
+  let fechaFin = inputFin.value;
+  let aviso = '';
+  if (inputInicio.value > inputFin.value) {
+    fechaFin = inputInicio.value;
+    inputFin.value = fechaFin;
+    aviso = 'La fecha Hasta era anterior a Desde; se ajustó para incluir un solo día.';
+  }
+  const fin = new Date(`${fechaFin}T23:59:59.999`);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) {
+    if (errorEl) {
+      errorEl.textContent = 'El rango de fechas seleccionado no es válido.';
+      errorEl.classList.remove('hidden');
+    }
+    return null;
+  }
+
+  if (errorEl) {
+    errorEl.textContent = aviso;
+    errorEl.classList.toggle('hidden', !aviso);
+  }
   return { inicio, fin };
 }
 
-function obtenerDatosTendencia(periodo, casos, inicio) {
-  let etiquetas;
-  let claveFecha;
+function obtenerRangoEstadisticas() {
+  return obtenerRangoFechas('filtro-fecha-inicio', 'filtro-fecha-fin', 'estadisticas-filtro-error');
+}
 
-  if (periodo === 'hoy') {
-    etiquetas = Array.from({ length: 24 }, (_, hora) => `${String(hora).padStart(2, '0')}:00`);
-    claveFecha = fecha => fecha.getHours();
-  } else if (periodo === 'semana') {
-    etiquetas = Array.from({ length: 7 }, (_, dia) => {
-      const fecha = new Date(inicio);
-      fecha.setDate(fecha.getDate() + dia);
-      return fecha.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' });
+function obtenerDatosTendencia(inicio, fin, casos) {
+  const mismoDia = inicio.getFullYear() === fin.getFullYear() &&
+    inicio.getMonth() === fin.getMonth() && inicio.getDate() === fin.getDate();
+  if (mismoDia) {
+    const etiquetas = Array.from({ length: 24 }, (_, hora) => `${String(hora).padStart(2, '0')}:00`);
+    const conteos = Array(24).fill(0);
+    casos.forEach(caso => {
+      const fecha = obtenerFechaIncidente(caso);
+      if (fecha) conteos[fecha.getHours()] += 1;
     });
-    claveFecha = fecha => Math.floor((new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()) - inicio) / 86400000);
-  } else {
-    const diasDelMes = new Date(inicio.getFullYear(), inicio.getMonth() + 1, 0).getDate();
-    etiquetas = Array.from({ length: diasDelMes }, (_, dia) => String(dia + 1));
-    claveFecha = fecha => fecha.getDate() - 1;
+    return { etiquetas, conteos };
   }
 
-  const conteos = Array(etiquetas.length).fill(0);
+  const etiquetas = [];
+  const conteos = [];
+  const conteosPorFecha = new Map();
+  for (const fecha = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+    fecha <= fin;
+    fecha.setDate(fecha.getDate() + 1)) {
+    const clave = fechaLocalComoInput(fecha);
+    etiquetas.push(`${String(fecha.getDate()).padStart(2, '0')}/${String(fecha.getMonth() + 1).padStart(2, '0')}`);
+    conteos.push(0);
+    conteosPorFecha.set(clave, conteos.length - 1);
+  }
   casos.forEach(caso => {
     const fecha = obtenerFechaIncidente(caso);
     if (!fecha) return;
-    const indice = claveFecha(fecha);
-    if (Number.isInteger(indice) && indice >= 0 && indice < conteos.length) {
-      conteos[indice] += 1;
-    }
+    const indice = conteosPorFecha.get(fechaLocalComoInput(fecha));
+    if (indice !== undefined) conteos[indice] += 1;
   });
   return { etiquetas, conteos };
 }
 
 function renderizarEstadisticas() {
-  const periodo = document.getElementById('filtro-periodo-estadisticas')?.value || 'hoy';
   const sectorSeleccionado = document.getElementById('filtro-sector-estadisticas')?.value || 'todos';
-  const { inicio, fin } = obtenerRangoEstadisticas(periodo);
+  const rango = obtenerRangoEstadisticas();
+  if (!rango) return;
+  const { inicio, fin } = rango;
   const casosPeriodo = obtenerCasos().filter(caso => {
     const fecha = obtenerFechaIncidente(caso);
-    return fecha && fecha >= inicio && fecha < fin;
+    return fecha && fecha >= inicio && fecha <= fin;
   });
   const casosFiltrados = casosPeriodo.filter(caso =>
     sectorSeleccionado === 'todos' || obtenerSectorReferencial(caso) === sectorSeleccionado
@@ -808,6 +947,8 @@ function renderizarEstadisticas() {
     return;
   }
   if (aviso) aviso.classList.add('hidden');
+  Chart.defaults.color = document.documentElement.classList.contains('high-contrast') ? '#FFFFFF' : '#475569';
+  Chart.defaults.borderColor = document.documentElement.classList.contains('high-contrast') ? '#FFFF00' : '#CBD5E1';
 
   const renderizarGrafico = (clave, canvasId, tipo, datos, opciones) => {
     const canvas = document.getElementById(canvasId);
@@ -847,7 +988,7 @@ function renderizarEstadisticas() {
     }]
   }, { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } });
 
-  const tendencia = obtenerDatosTendencia(periodo, casosFiltrados, inicio);
+  const tendencia = obtenerDatosTendencia(inicio, fin, casosFiltrados);
   renderizarGrafico('tendencia', 'grafico-tendencia', 'line', {
     labels: tendencia.etiquetas,
     datasets: [{
@@ -861,9 +1002,170 @@ function renderizarEstadisticas() {
   }, { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } });
 }
 
-// ─── Inicialización y Login ─────────────────────────────────────────────────
+function calcularTiempoResolucion(caso) {
+  const registrado = obtenerFechaIncidente(caso);
+  const cierre = caso.atendido_at ? new Date(caso.atendido_at) : null;
+  if (!registrado || !cierre || Number.isNaN(cierre.getTime())) return null;
+  const minutos = (cierre - registrado) / 60000;
+  return Number.isFinite(minutos) && minutos >= 0 ? minutos : null;
+}
 
+function renderizarRendimiento() {
+  const rango = obtenerRangoFechas(
+    'rendimiento-fecha-inicio',
+    'rendimiento-fecha-fin',
+    'rendimiento-filtro-error'
+  );
+  if (!rango) return;
+
+  const unidadSeleccionada = document.getElementById('filtro-unidad-rendimiento')?.value || 'todas';
+  const casosPeriodo = obtenerCasos().filter(caso => {
+    const fecha = obtenerFechaIncidente(caso);
+    return fecha && fecha >= rango.inicio && fecha <= rango.fin;
+  });
+  const asignados = casosPeriodo.filter(caso => caso.unidad_asignada || caso.unidad_codigo);
+  const unidades = unidadSeleccionada === 'todas'
+    ? UNIDADES_DISPONIBLES
+    : UNIDADES_DISPONIBLES.filter(unidad => unidad.codigo === unidadSeleccionada);
+  const asignadosSeleccionados = unidadSeleccionada === 'todas'
+    ? asignados
+    : asignados.filter(caso => (caso.unidad_asignada || caso.unidad_codigo) === unidadSeleccionada);
+  const casosUnidad = (unidad) => asignados.filter(caso =>
+    (caso.unidad_asignada || caso.unidad_codigo) === unidad.codigo
+  );
+  const atendidos = asignadosSeleccionados.filter(caso => caso.estado === 'atendido');
+  const tiempos = atendidos.map(calcularTiempoResolucion).filter(Number.isFinite);
+  const promedioGlobal = tiempos.length
+    ? (tiempos.reduce((suma, tiempo) => suma + tiempo, 0) / tiempos.length).toFixed(1)
+    : '—';
+
+  document.getElementById('kpi-rend-asignados').textContent = asignadosSeleccionados.length;
+  document.getElementById('kpi-rend-atendidos').textContent = atendidos.length;
+  document.getElementById('kpi-rend-efectividad').textContent =
+    `${asignadosSeleccionados.length ? (atendidos.length / asignadosSeleccionados.length * 100).toFixed(1) : '0.0'}%`;
+  document.getElementById('kpi-rend-tiempo').textContent = promedioGlobal;
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = document.documentElement.classList.contains('high-contrast') ? '#FFFFFF' : '#475569';
+    Chart.defaults.borderColor = document.documentElement.classList.contains('high-contrast') ? '#FFFF00' : '#CBD5E1';
+  }
+  const chartError = document.getElementById('rendimiento-chart-error');
+  if (chartError) {
+    chartError.textContent = typeof Chart === 'undefined'
+      ? 'No se pudieron cargar los gráficos. Verifica tu conexión a Internet.'
+      : '';
+    chartError.classList.toggle('hidden', typeof Chart !== 'undefined');
+  }
+
+  const renderizarGrafico = (clave, canvasId, tipo, datos, opciones) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === 'undefined') return;
+    const existente = dashboardState.chartInstances[clave];
+    if (existente && existente.config.type === tipo) {
+      existente.data = datos;
+      existente.options = { responsive: true, maintainAspectRatio: false, ...opciones };
+      existente.update('none');
+      return;
+    }
+    existente?.destroy();
+    dashboardState.chartInstances[clave] = new Chart(canvas, {
+      type: tipo,
+      data: datos,
+      options: { responsive: true, maintainAspectRatio: false, ...opciones }
+    });
+  };
+
+  const resumen = unidades.map(unidad => {
+    const casos = casosUnidad(unidad);
+    const atendidosUnidad = casos.filter(caso => caso.estado === 'atendido');
+    const cancelados = casos.filter(caso => caso.estado === 'cancelado').length;
+    const enCurso = casos.filter(caso => ['asignado', 'en_camino'].includes(caso.estado)).length;
+    const duraciones = atendidosUnidad.map(calcularTiempoResolucion).filter(Number.isFinite);
+    const promedio = duraciones.length
+      ? duraciones.reduce((suma, tiempo) => suma + tiempo, 0) / duraciones.length
+      : null;
+    return {
+      unidad,
+      asignados: casos.length,
+      atendidos: atendidosUnidad.length,
+      cancelados,
+      enCurso,
+      efectividad: casos.length ? atendidosUnidad.length / casos.length * 100 : 0,
+      promedio
+    };
+  });
+  const etiquetas = resumen.map(item => item.unidad.codigo);
+
+  renderizarGrafico('rendimiento-unidades', 'grafico-rendimiento-unidades', 'bar', {
+    labels: etiquetas,
+    datasets: [
+      { label: 'Atendidos', data: resumen.map(item => item.atendidos), backgroundColor: '#059669' },
+      { label: 'En curso', data: resumen.map(item => item.enCurso), backgroundColor: '#D97706' },
+      { label: 'Cancelados', data: resumen.map(item => item.cancelados), backgroundColor: '#64748B' }
+    ]
+  }, {
+    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    plugins: { legend: { position: 'bottom' } }
+  });
+
+  renderizarGrafico('rendimiento-tiempos', 'grafico-rendimiento-tiempos', 'bar', {
+    labels: etiquetas,
+    datasets: [{
+      label: 'Minutos promedio',
+      data: resumen.map(item => item.promedio === null ? null : Number(item.promedio.toFixed(1))),
+      backgroundColor: '#1565C0'
+    }]
+  }, {
+    indexAxis: 'y',
+    scales: { x: { beginAtZero: true } },
+    plugins: { legend: { display: false } }
+  });
+
+  const casosAtendidosSeleccionados = atendidos.filter(caso =>
+    unidadSeleccionada === 'todas' ||
+    (caso.unidad_asignada || caso.unidad_codigo) === unidadSeleccionada
+  );
+  const categorias = [
+    { key: 'violencia', label: 'Violencia' },
+    { key: 'robo', label: 'Robo' },
+    { key: 'accidente', label: 'Accidente' },
+    { key: 'auxilio', label: 'Auxilio' },
+    { key: 'otros', label: 'Otros' }
+  ];
+  renderizarGrafico('rendimiento-tipos', 'grafico-rendimiento-tipos', 'doughnut', {
+    labels: categorias.map(item => item.label),
+    datasets: [{
+      data: categorias.map(item => casosAtendidosSeleccionados.filter(caso => caso.tipo === item.key).length),
+      backgroundColor: ['#DC2626', '#F59E0B', '#0284C7', '#059669', '#64748B']
+    }]
+  }, { plugins: { legend: { position: 'bottom' } } });
+
+  const tbody = document.getElementById('tabla-rendimiento-tbody');
+  if (tbody) {
+    tbody.innerHTML = resumen.map(item => `
+      <tr>
+        <td><code>${escaparHTML(item.unidad.codigo)}</code></td>
+        <td>${escaparHTML(item.unidad.nombre)}</td>
+        <td>${escaparHTML(item.unidad.sector)}</td>
+        <td>${item.asignados}</td>
+        <td>${item.atendidos}</td>
+        <td>${item.cancelados}</td>
+        <td>${item.efectividad.toFixed(1)}%</td>
+        <td>${item.promedio === null ? '—' : item.promedio.toFixed(1)}</td>
+      </tr>`).join('');
+  }
+}
+
+// ─── Inicialización y Login ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  configurarFiltrosFecha();
+  document.addEventListener('accessibilitypreferenceschange', () => {
+    if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
+      renderizarEstadisticas();
+    }
+    if (document.getElementById('view-rendimiento')?.classList.contains('active')) {
+      renderizarRendimiento();
+    }
+  });
 
   // 1. Inicio de sesión de Operador con Supabase Auth
   const formLogin = document.getElementById('login-form');
@@ -947,9 +1249,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  ['filtro-periodo-estadisticas', 'filtro-sector-estadisticas'].forEach(id => {
+  ['filtro-fecha-inicio', 'filtro-fecha-fin', 'filtro-sector-estadisticas'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', renderizarEstadisticas);
   });
+  ['filtro-unidad-rendimiento', 'rendimiento-fecha-inicio', 'rendimiento-fecha-fin'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', renderizarRendimiento);
+  });
+  document.getElementById('btn-exportar-excel')?.addEventListener('click', exportarHistorialExcel);
 
   // 6. Confirmación de Despacho y Cierre
   document.getElementById('btn-confirmar-asignacion')?.addEventListener('click', confirmarDespacho);

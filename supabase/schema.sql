@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.incidentes (
   audio text,
   audio_referencia text,
   audio_evidencia text,
+  nota_evidencia text NOT NULL DEFAULT '',
   estado text NOT NULL DEFAULT 'recibido'
     CHECK (estado IN ('recibido', 'asignado', 'en_camino', 'atendido', 'cancelado')),
   unidad_asignada text,
@@ -42,6 +43,9 @@ CREATE TABLE IF NOT EXISTS public.incidentes (
   updated_at timestamptz NOT NULL DEFAULT now(),
   atendido_at timestamptz
 );
+
+ALTER TABLE public.incidentes
+  ADD COLUMN IF NOT EXISTS nota_evidencia text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS public.ciudadano_auth_rate_limits (
   key_hash text PRIMARY KEY,
@@ -85,7 +89,7 @@ GRANT SELECT ON public.incidentes TO authenticated;
 GRANT INSERT (
   ciudadano_dni, tipo, prioridad, ubicacion, referencia,
   tiene_audio, tiene_audio_evidencia, tiene_foto,
-  foto, audio, audio_referencia, audio_evidencia,
+  foto, audio, audio_referencia, audio_evidencia, nota_evidencia,
   estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones
 ) ON public.incidentes TO authenticated;
 GRANT UPDATE (

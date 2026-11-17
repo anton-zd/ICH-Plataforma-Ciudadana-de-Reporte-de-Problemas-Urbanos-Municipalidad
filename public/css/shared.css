@@ -417,6 +417,275 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* ─── Preferencias universales de accesibilidad ─────────────────────────── */
+.accessibility-widget {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 11000;
+  font-family: var(--font-body);
+}
+
+.accessibility-widget > summary {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+  border-radius: 50%;
+  background: var(--color-primary-dark);
+  color: #FFFFFF;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  font-size: 1.65rem;
+  list-style: none;
+}
+
+.accessibility-widget > summary::-webkit-details-marker {
+  display: none;
+}
+
+.accessibility-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.65rem);
+  width: min(90vw, 360px);
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 2px solid var(--color-primary-dark);
+  border-radius: var(--radius-md);
+  background: #FFFFFF;
+  color: #0F172A;
+  box-shadow: var(--shadow-xl);
+}
+
+.accessibility-panel h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.accessibility-font-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.accessibility-panel button {
+  min-width: 0;
+  min-height: 48px;
+  padding: 0.45rem;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-weight: 700;
+  white-space: normal;
+}
+
+.accessibility-panel button[aria-pressed="true"] {
+  border-color: #0A2540;
+  background: #0A2540;
+  color: #FFFFFF;
+}
+
+.accessibility-font-controls button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.accessibility-font-controls button span {
+  font-size: 0.72em;
+}
+
+html[data-accessibility-font-size="large"] {
+  font-size: 115%;
+}
+
+html[data-accessibility-font-size="extra-large"] {
+  font-size: 130%;
+}
+
+html[data-accessibility-font-size="large"] button,
+html[data-accessibility-font-size="large"] .btn,
+html[data-accessibility-font-size="extra-large"] button,
+html[data-accessibility-font-size="extra-large"] .btn {
+  min-height: 48px;
+  white-space: normal;
+}
+
+html[data-accessibility-font-size="large"] .accessibility-widget button,
+html[data-accessibility-font-size="extra-large"] .accessibility-widget button {
+  min-height: 48px;
+}
+
+html.high-contrast body {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+}
+
+html.high-contrast body .app-wrapper,
+html.high-contrast body .sereno-wrapper,
+html.high-contrast body .dashboard-container,
+html.high-contrast body .sidebar-op,
+html.high-contrast body .bottom-nav-sereno,
+html.high-contrast body .service-card,
+html.high-contrast body .beneficiary-card,
+html.high-contrast body .beneficiary-card-body,
+html.high-contrast body .services-section,
+html.high-contrast body .tipo-card,
+html.high-contrast body .cierre-modal-content {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+  border-color: #FFFF00 !important;
+}
+
+html.high-contrast .hero-section {
+  background-image: none !important;
+  background-color: #000000 !important;
+}
+
+html.high-contrast .hero-title .highlight {
+  background: none !important;
+  color: #FFFFFF !important;
+  -webkit-text-fill-color: #FFFFFF !important;
+}
+
+html.high-contrast h1,
+html.high-contrast h2,
+html.high-contrast h3,
+html.high-contrast h4,
+html.high-contrast h5,
+html.high-contrast h6,
+html.high-contrast p,
+html.high-contrast label,
+html.high-contrast small,
+html.high-contrast span,
+html.high-contrast li,
+html.high-contrast td,
+html.high-contrast th,
+html.high-contrast .text-dark,
+html.high-contrast .text-muted,
+html.high-contrast .text-secondary,
+html.high-contrast .text-body,
+html.high-contrast .text-white-50 {
+  color: #FFFFFF !important;
+}
+
+html.high-contrast a,
+html.high-contrast .text-primary,
+html.high-contrast .text-info,
+html.high-contrast .text-success,
+html.high-contrast .text-danger,
+html.high-contrast .text-warning {
+  color: #FFFF00 !important;
+}
+
+html.high-contrast body .card,
+html.high-contrast body .card-modern,
+html.high-contrast body .card-modern-header,
+html.high-contrast body .accessibility-panel,
+html.high-contrast body .login-box,
+html.high-contrast body .modal-custom,
+html.high-contrast body .bg-light,
+html.high-contrast body .bg-white,
+html.high-contrast body .table,
+html.high-contrast body .table-light,
+html.high-contrast body .incident-card,
+html.high-contrast body .stat-card-op {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+  border-color: #FFFF00 !important;
+}
+
+html.high-contrast [class*="bg-"] {
+  background-color: #000000 !important;
+}
+
+html.high-contrast body .badge,
+html.high-contrast body .badge-status,
+html.high-contrast body .service-priority-badge,
+html.high-contrast body .priority-high,
+html.high-contrast body .priority-normal,
+html.high-contrast body .toast,
+html.high-contrast body .alert {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFF00 !important;
+}
+
+html.high-contrast .table {
+  --bs-table-bg: #000000;
+  --bs-table-color: #FFFFFF;
+  --bs-table-border-color: #FFFF00;
+  --bs-table-striped-bg: #111111;
+  --bs-table-hover-bg: #222222;
+}
+
+html.high-contrast input,
+html.high-contrast select,
+html.high-contrast textarea,
+html.high-contrast .form-control,
+html.high-contrast .form-select {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFFFF !important;
+}
+
+html.high-contrast input::placeholder,
+html.high-contrast textarea::placeholder {
+  color: #E5E5E5 !important;
+  opacity: 1;
+}
+
+html.high-contrast body button,
+html.high-contrast body .btn,
+html.high-contrast body .btn-nav-emergency,
+html.high-contrast body .btn-cta-hero,
+html.high-contrast body .btn-cta-secondary,
+html.high-contrast body .btn-beneficiary,
+html.high-contrast body .nav-item-dashboard,
+html.high-contrast body .demo-role-link {
+  background: #000000 !important;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFF00 !important;
+}
+
+html.high-contrast button:hover,
+html.high-contrast .btn:hover,
+html.high-contrast button[aria-pressed="true"] {
+  background: #FFFF00 !important;
+  color: #000000 !important;
+}
+
+html.high-contrast :focus-visible {
+  outline: 4px solid #FFFF00 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 2px #000000 !important;
+}
+
+html.high-contrast .accessibility-widget > summary {
+  background: #000000 !important;
+  color: #FFFF00 !important;
+  border: 3px solid #FFFF00 !important;
+}
+
+html.high-contrast body .demo-role-link.active {
+  background: #000000 !important;
+  color: #FFFF00 !important;
+  border-color: #FFFF00 !important;
+}
+
+@media (max-width: 576px) {
+  .accessibility-widget {
+    right: 0.6rem;
+    bottom: 0.6rem;
+  }
+}
+
 /* ─── Incidentes en Panel de Operador (Unificado peru.info) ─────────────── */
 .incident-card {
   background: var(--color-surface);
