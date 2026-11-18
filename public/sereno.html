@@ -241,7 +241,7 @@
     </section>
 
     <!-- Header Visible Post-Login -->
-    <header class="sereno-header-bar d-flex align-items-center justify-content-between hidden" id="sereno-header">
+    <header class="sereno-header-bar d-flex align-items-center justify-content-between flex-wrap gap-2 hidden" id="sereno-header">
       <div class="d-flex align-items-center gap-2">
         <span class="fs-4">🚔</span>
         <div>
@@ -250,9 +250,16 @@
         </div>
       </div>
 
-      <div class="d-flex align-items-center gap-2 bg-dark bg-opacity-25 px-3 py-1 rounded-pill border border-light border-opacity-25">
-        <div class="status-dot-field" id="estado-dot"></div>
-        <span class="small fw-bold text-white" id="sereno-estado-texto" style="font-size: 0.78rem;">Disponible</span>
+      <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 bg-dark bg-opacity-25 px-3 py-1 rounded-pill border border-light border-opacity-25">
+          <div class="status-dot-field" id="estado-dot"></div>
+          <span class="small fw-bold text-white" id="sereno-estado-texto" style="font-size: 0.78rem;">Disponible</span>
+        </div>
+        <button class="btn btn-sm btn-outline-light rounded-pill px-2 d-inline-flex align-items-center gap-1" id="btn-refresh-sereno" type="button" aria-label="Actualizar asignación manualmente" style="min-height: 48px;">
+          <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+          <span>Actualizar</span>
+        </button>
+        <span class="visually-hidden" id="sereno-realtime-status" role="status" aria-live="polite">Conectando Realtime…</span>
       </div>
     </header>
 

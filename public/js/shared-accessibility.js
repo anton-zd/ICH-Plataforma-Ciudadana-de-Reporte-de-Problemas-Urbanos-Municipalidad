@@ -80,6 +80,28 @@
       });
     });
 
+    const probarAccesibilidad = document.getElementById('btn-probar-accesibilidad');
+    probarAccesibilidad?.addEventListener('click', event => {
+      event.stopPropagation();
+      preferences.fontSize = 'extra-large';
+      preferences.highContrast = true;
+      preferences.voiceGuide = voiceSupported;
+      renderPreferences();
+      persistPreferences();
+
+      const widget = document.querySelector('.accessibility-widget');
+      if (widget instanceof HTMLDetailsElement) widget.open = true;
+      probarAccesibilidad.textContent = voiceSupported
+        ? 'Modo Accesible Activado'
+        : 'Modo Accesible Activado · Voz no disponible';
+      probarAccesibilidad.setAttribute('aria-pressed', 'true');
+      probarAccesibilidad.classList.remove('btn-warning', 'text-dark');
+      probarAccesibilidad.classList.add('btn-success', 'text-white');
+      hablar(voiceSupported
+        ? 'Modo accesible activado. Texto ampliado, alto contraste y lectura por voz listos para usar'
+        : 'Modo accesible activado. Texto ampliado y alto contraste listos para usar. La lectura por voz no está disponible en este navegador');
+    });
+
     document.addEventListener('click', event => {
       const target = event.target.closest('button, a, [role="button"], h1, h2, h3, h4, h5, h6');
       if (target && !target.closest('.accessibility-widget')) {

@@ -407,6 +407,10 @@
             <i class="bi bi-shield-check text-success me-1"></i> Acceso rápido con DNI y PIN
           </p>
 
+          <button class="btn btn-outline-primary rounded-pill px-4 hidden" id="btn-mis-reportes" type="button" style="min-height: 48px;">
+            <i class="bi bi-clock-history me-1" aria-hidden="true"></i> Mis solicitudes
+          </button>
+
         </div>
       </section>
 
@@ -660,7 +664,7 @@
           <div class="card-modern mb-3">
             <div class="card-modern-header">
               <span>Etapa actual:</span>
-              <span class="badge-status badge-recibido" id="badge-estado">RECIBIDO</span>
+              <span class="badge-status badge-recibido" id="badge-estado" aria-live="polite">RECIBIDO</span>
             </div>
             <div class="card-modern-body pt-2 pb-3">
               <div class="timeline-stepper" role="list">
@@ -685,7 +689,7 @@
           </div>
 
           <!-- Datos de la patrulla asignada (RF-05) -->
-          <div class="patrulla-card hidden" id="info-unidad-panel" aria-label="Información de la unidad de auxilio">
+          <div class="patrulla-card hidden" id="info-unidad-panel" aria-label="Información de la unidad de auxilio" aria-live="polite">
             <div class="fs-1" aria-hidden="true">🚔</div>
             <div>
               <div class="small text-white-50 text-uppercase fw-bold" style="font-size: 0.68rem;">Unidad Asignada</div>
@@ -698,6 +702,26 @@
             </div>
           </div>
         </div>
+
+        <div class="d-flex align-items-center justify-content-between gap-2 mt-3">
+          <button class="btn btn-outline-primary fw-semibold" id="btn-actualizar-estado" type="button" style="min-height: 48px;">
+            <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i> Actualizar estado
+          </button>
+          <span class="small text-muted text-end" id="ciudadano-realtime-status" role="status" aria-live="polite">Conectando Realtime…</span>
+        </div>
+
+        <section class="ciudadano-historial-container mt-4" id="ciudadano-historial-container" aria-labelledby="ciudadano-historial-heading">
+          <div class="ciudadano-historial-heading">
+            <h3 class="h5 fw-bold mb-0" id="ciudadano-historial-heading">Historial de mis solicitudes</h3>
+            <button class="btn btn-sm btn-outline-primary fw-semibold" id="btn-refrescar-historial-ciudadano" type="button" aria-label="Actualizar historial de mis solicitudes" style="min-height: 48px;">
+              <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+              <span>Actualizar</span>
+            </button>
+          </div>
+          <div id="ciudadano-historial-lista" role="list" aria-live="polite">
+            <p class="text-muted small mb-0">Inicia sesión para consultar tus solicitudes.</p>
+          </div>
+        </section>
       </section>
 
     </main>

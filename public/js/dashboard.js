@@ -1,7 +1,7 @@
 /**
  * public/js/dashboard.js
  * Lógica Frontend del Rol Operador Central — Sistema Inclusivo de Serenazgo
- * Gestión de Incidentes en Supabase con sondeo ligero
+ * Gestión de Incidentes en Supabase con actualización Realtime
  * Regla de Negocio RN-01: Priorización automática de Violencia y Auxilio en la cola
  */
 
@@ -15,6 +15,9 @@ const supabaseClient = window.supabase
   })
   : null;
 
+const COLUMNAS_LIGERAS_INCIDENTES = 'id, ticket, ciudadano_dni, tipo, prioridad, ubicacion, referencia, nota_evidencia, tiene_audio, tiene_audio_evidencia, tiene_foto, estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, updated_at, atendido_at';
+const CAMPOS_LIGEROS_INCIDENTES = COLUMNAS_LIGERAS_INCIDENTES.split(',').map(columna => columna.trim());
+
 // ─── Estado Local del Operador ───────────────────────────────────────────────
 const dashboardState = {
   usuarioActual: null,
@@ -23,13 +26,13 @@ const dashboardState = {
   unidadSeleccionadaId: null,
   mapaDashboard: null,
   markersList: [],
-  pollingInterval: null,
+  realtimeChannel: null,
   chartInstances: {},
   casos: [],
   lastLoadError: null,
   refreshInFlight: false,
   pendingStatsRefresh: false,
-  evidenceLoadsInFlight: new Set(),
+  evidenciasPorTicket: new Map(),
   casesSignature: null,
 };
 
@@ -66,6 +69,98 @@ function escaparHTML(valor) {
   })[caracter]);
 }
 
+function actualizarFirmaCasos() {
+  dashboardState.casesSignature = JSON.stringify(dashboardState.casos.map(caso => [
+    caso.ticket, caso.estado, caso.unidad_asignada, caso.unidad_codigo,
+    caso.timestamp, caso.updated_at, caso.atendido_at
+  ]));
+}
+
+function extraerIncidenteLigero(registro) {
+  const incidente = {};
+  CAMPOS_LIGEROS_INCIDENTES.forEach(campo => {
+    if (Object.prototype.hasOwnProperty.call(registro, campo)) {
+      incidente[campo] = registro[campo];
+    }
+  });
+  return incidente;
+}
+
+function renderizarVistasActivas() {
+  renderizarDashboard();
+  if (document.getElementById('view-historial')?.classList.contains('active')) {
+    renderizarHistorial();
+  }
+  if (document.getElementById('view-estadisticas')?.classList.contains('active')) {
+    renderizarEstadisticas();
+  }
+  if (document.getElementById('view-rendimiento')?.classList.contains('active')) {
+    renderizarRendimiento();
+  }
+}
+
+function aplicarCambioIncidenteRealtime(payload) {
+  const registro = payload.new || {};
+  const ticket = registro.ticket || payload.old?.ticket;
+  const id = registro.id || payload.old?.id;
+  const existente = dashboardState.casos.findIndex(caso =>
+    (ticket && caso.ticket === ticket) || (id && caso.id === id)
+  );
+
+  if (payload.eventType === 'DELETE') {
+    if (existente >= 0) dashboardState.casos.splice(existente, 1);
+  } else if (ticket) {
+    const incidenteLigero = extraerIncidenteLigero(registro);
+    if (existente >= 0) {
+      Object.assign(dashboardState.casos[existente], incidenteLigero);
+    } else {
+      dashboardState.casos.push(incidenteLigero);
+    }
+  } else {
+    return;
+  }
+
+  dashboardState.casos.sort((a, b) =>
+    new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+  );
+  actualizarFirmaCasos();
+  renderizarVistasActivas();
+}
+
+function actualizarIndicadorRealtime(texto, activo) {
+  const indicador = document.getElementById('realtime-status');
+  if (!indicador) return;
+  indicador.textContent = texto;
+  indicador.classList.toggle('text-success', activo);
+  indicador.classList.toggle('text-warning', !activo);
+}
+
+function suscribirNuevosIncidentes() {
+  if (!supabaseClient || !dashboardState.usuarioActual) return;
+  if (dashboardState.realtimeChannel) {
+    const canalAnterior = dashboardState.realtimeChannel;
+    dashboardState.realtimeChannel = null;
+    void supabaseClient.removeChannel(canalAnterior).then(estado => {
+      if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime anterior:', estado);
+    }).catch(error => console.error('Error al cerrar el canal Realtime anterior:', error));
+  }
+
+  dashboardState.realtimeChannel = supabaseClient
+    .channel('operador-incidentes-realtime')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'incidentes'
+    }, aplicarCambioIncidenteRealtime)
+    .subscribe(estado => {
+      if (estado === 'SUBSCRIBED') {
+        actualizarIndicadorRealtime('Tiempo real activo', true);
+      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(estado)) {
+        actualizarIndicadorRealtime('Realtime desconectado · Actualiza manualmente', false);
+      }
+    });
+}
+
 async function cargarIncidentes() {
   try {
     if (!supabaseClient) {
@@ -73,7 +168,7 @@ async function cargarIncidentes() {
     }
     const { data, error } = await supabaseClient
       .from('incidentes')
-      .select('id,ticket,ciudadano_dni,tipo,prioridad,ubicacion,referencia,nota_evidencia,tiene_audio,tiene_audio_evidencia,tiene_foto,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,observaciones,timestamp,updated_at,atendido_at')
+      .select(COLUMNAS_LIGERAS_INCIDENTES)
       .order('timestamp', { ascending: false });
     if (error) throw error;
     const signature = JSON.stringify((data || []).map(caso => [
@@ -119,9 +214,10 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
     if (!dashboardState.casos.length) {
       const listContainer = document.getElementById('incidents-list');
       if (listContainer) {
-        listContainer.innerHTML = '<div class="text-center py-5 text-danger">No se pudieron cargar las emergencias. Se volverá a intentar automáticamente.</div>';
+        listContainer.innerHTML = '<div class="text-center py-5 text-danger">No se pudieron cargar las emergencias. Verifica tu conexión y pulsa Actualizar para volver a intentar.</div>';
       }
     }
+    return false;
   } finally {
     dashboardState.refreshInFlight = false;
     const refrescarEstadisticas = dashboardState.pendingStatsRefresh && dashboardState.usuarioActual;
@@ -130,6 +226,7 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
       void actualizarDatosDashboard({ actualizarEstadisticas: true });
     }
   }
+  return true;
 }
 
 async function activarSesionOperador(user) {
@@ -143,11 +240,8 @@ async function activarSesionOperador(user) {
   const userLabel = document.getElementById('user-nombre');
   if (userLabel) userLabel.textContent = user.app_metadata.nombre || 'Central Chorrillos';
 
+  suscribirNuevosIncidentes();
   await actualizarDatosDashboard();
-  if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-  dashboardState.pollingInterval = setInterval(() => {
-    void actualizarDatosDashboard();
-  }, 3000);
 }
 
 // ─── Notificaciones Toast ────────────────────────────────────────────────────
@@ -217,7 +311,7 @@ function renderizarDashboard() {
       <div class="text-center py-5 text-muted">
         <i class="bi bi-shield-check display-4 text-success d-block mb-2"></i>
         <div class="h5 fw-bold text-dark">No hay emergencias pendientes</div>
-        <small>Las nuevas solicitudes se detectan automáticamente en unos segundos.</small>
+        <small>Las nuevas solicitudes se reflejan en tiempo real. Si la conexión se interrumpe, pulsa Actualizar.</small>
       </div>`;
     return;
   }
@@ -322,29 +416,38 @@ function renderizarEvidenciaModal(caso) {
   }
 }
 
-async function cargarEvidenciaModal(ticket) {
-  if (dashboardState.evidenceLoadsInFlight.has(ticket)) return;
-  dashboardState.evidenceLoadsInFlight.add(ticket);
-  try {
-    const { data: evidencia, error } = await supabaseClient
+async function cargarEvidenciasIncidente(ticket) {
+  const caso = dashboardState.casos.find(item => item.ticket === ticket);
+  if (!caso || (!caso.tiene_foto && !caso.tiene_audio && !caso.tiene_audio_evidencia)) return;
+
+  let evidenciaPromise = dashboardState.evidenciasPorTicket.get(ticket);
+  if (!evidenciaPromise) {
+    evidenciaPromise = supabaseClient
       .from('incidentes')
       .select('foto,audio,audio_referencia,audio_evidencia,nota_evidencia')
       .eq('ticket', ticket)
-      .maybeSingle();
-    if (error) throw error;
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return data || {};
+      });
+    dashboardState.evidenciasPorTicket.set(ticket, evidenciaPromise);
+    if (dashboardState.evidenciasPorTicket.size > 8) {
+      const ticketMasAntiguo = dashboardState.evidenciasPorTicket.keys().next().value;
+      if (ticketMasAntiguo !== ticket) dashboardState.evidenciasPorTicket.delete(ticketMasAntiguo);
+    }
+  }
 
+  try {
+    const evidencia = await evidenciaPromise;
     if (dashboardState.incidenteSeleccionado?.ticket !== ticket) return;
-    const caso = dashboardState.casos.find(item => item.ticket === ticket);
-    if (!caso) return;
-
-    Object.assign(caso, evidencia || {});
-    caso.audio = evidencia?.audio_evidencia || evidencia?.audio_referencia || evidencia?.audio || null;
+    Object.assign(caso, evidencia);
+    caso.audio = evidencia.audio_evidencia || evidencia.audio_referencia || evidencia.audio || null;
     renderizarEvidenciaModal(caso);
   } catch (error) {
+    dashboardState.evidenciasPorTicket.delete(ticket);
     console.error('No se pudo cargar la evidencia del incidente:', error);
     notify(error.message || 'No se pudo cargar la evidencia del incidente.', 'error');
-  } finally {
-    dashboardState.evidenceLoadsInFlight.delete(ticket);
   }
 }
 
@@ -364,6 +467,7 @@ window.abrirModalAsignacion = function(ticket) {
   if (modalTipo) modalTipo.textContent = `${TIPO_CONFIG[caso.tipo]?.icon || '🚨'} Emergencia por ${caso.tipo.toUpperCase()}`;
   if (modalTicket) modalTicket.textContent = `Código: ${caso.ticket}`;
   renderizarEvidenciaModal(caso);
+  void cargarEvidenciasIncidente(ticket);
 
   if (modalPrioridad) {
     const esAlta = (caso.tipo === 'violencia' || caso.tipo === 'auxilio');
@@ -491,9 +595,8 @@ async function confirmarDespacho() {
   const caso = dashboardState.casos.find(item => item.ticket === ticket);
   if (caso && actualizacion) Object.assign(caso, actualizacion);
   cerrarModal('modal-asignar');
-  renderizarDashboard();
+  renderizarVistasActivas();
   notify(`Patrulla ${unidad.codigo} despachada a ${ticket}`, 'success');
-  void actualizarDatosDashboard();
 }
 
 // ─── Modal de Cierre de Emergencia ───────────────────────────────────────────
@@ -556,9 +659,8 @@ async function confirmarCierreIncidente() {
   const caso = dashboardState.casos.find(item => item.ticket === ticket);
   if (caso && actualizacion) Object.assign(caso, actualizacion);
   cerrarModal('modal-cierre');
-  renderizarDashboard();
+  renderizarVistasActivas();
   notify(`Incidente ${ticket} cerrado exitosamente`, 'success');
-  void actualizarDatosDashboard();
 }
 
 function cerrarModal(modalId) {
@@ -1203,11 +1305,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2. Logout
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
-    if (dashboardState.pollingInterval) clearInterval(dashboardState.pollingInterval);
-    dashboardState.pollingInterval = null;
+    if (dashboardState.realtimeChannel && supabaseClient) {
+      const canal = dashboardState.realtimeChannel;
+      dashboardState.realtimeChannel = null;
+      void supabaseClient.removeChannel(canal).then(estado => {
+        if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del operador:', estado);
+      }).catch(error => console.error('Error al cerrar el canal Realtime del operador:', error));
+    }
     dashboardState.usuarioActual = null;
     dashboardState.casos = [];
     dashboardState.pendingStatsRefresh = false;
+    dashboardState.evidenciasPorTicket.clear();
     cerrarModal('modal-asignar');
     cerrarModal('modal-cierre');
     document.getElementById('dashboard-app')?.classList.add('hidden');
@@ -1219,8 +1327,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 3. Botón de Actualizar manual
-  document.getElementById('btn-refresh')?.addEventListener('click', async () => {
-    await actualizarDatosDashboard({ actualizarEstadisticas: true });
+  document.getElementById('btn-refresh')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span>Actualizando…</span>';
+    try {
+      const actualizado = await actualizarDatosDashboard({ actualizarEstadisticas: true });
+      if (actualizado) notify('Datos actualizados correctamente.', 'success');
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = original;
+    }
   });
 
   // 4. Filtros de Estado

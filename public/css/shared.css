@@ -191,6 +191,76 @@ h1, h2, h3, h4, h5, h6 {
   color: #FFFFFF;
   border-color: var(--color-success);
 }
+
+.ciudadano-historial-container {
+  padding: 1rem;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.ciudadano-historial-heading,
+.ciudadano-historial-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ciudadano-historial-heading {
+  margin-bottom: 0.75rem;
+}
+
+.ciudadano-historial-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 48px;
+  margin-bottom: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #FFFFFF;
+  color: var(--color-text-dark);
+  text-align: left;
+  white-space: normal;
+}
+
+.ciudadano-historial-card:last-child {
+  margin-bottom: 0;
+}
+
+.ciudadano-historial-card:hover,
+.ciudadano-historial-card:focus-visible {
+  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.ciudadano-historial-tipo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+.ciudadano-historial-tipo img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.ciudadano-historial-meta {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.ciudadano-historial-observaciones {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.9rem;
+}
 .btn-touch-success:hover {
   background: #047857;
   color: #FFFFFF;
@@ -537,7 +607,8 @@ html.high-contrast body .beneficiary-card,
 html.high-contrast body .beneficiary-card-body,
 html.high-contrast body .services-section,
 html.high-contrast body .tipo-card,
-html.high-contrast body .cierre-modal-content {
+html.high-contrast body .cierre-modal-content,
+html.high-contrast body .ciudadano-historial-container {
   background: #000000 !important;
   color: #FFFFFF !important;
   border-color: #FFFF00 !important;

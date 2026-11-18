@@ -1,7 +1,7 @@
 /**
  * public/js/sereno.js
  * Lógica Frontend del Rol Serenazgo en Campo — Sistema Inclusivo de Atención
- * Recepción periódica de asignaciones desde Supabase
+ * Recepción Realtime de asignaciones desde Supabase
  * Flujo Táctico: Asignado -> En Camino -> Cierre con Observaciones (RF-07)
  */
 
@@ -26,9 +26,19 @@ const serenoState = {
   mapaSereno: null,
   markerAgente: null,
   markerIncidente: null,
-  pollingInterval: null,
+  realtimeChannel: null,
+  evidenciasPorTicket: new Map(),
+  refreshInFlight: false,
   posicionAgente: { lat: -12.1620, lng: -77.0225 }, // Posición base en Chorrillos
   lastLoadError: null,
+};
+
+const COLUMNAS_LIGERAS_INCIDENTES_SERENO = 'id, ticket, ciudadano_dni, tipo, prioridad, ubicacion, referencia, nota_evidencia, tiene_audio, tiene_audio_evidencia, tiene_foto, estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, updated_at, atendido_at';
+const POSICIONES_UNIDADES = {
+  'SR-01': { lat: -12.1620, lng: -77.0225 },
+  'SR-02': { lat: -12.1580, lng: -77.0260 },
+  'SR-03': { lat: -12.1750, lng: -77.0140 },
+  'SR-04': { lat: -12.1810, lng: -77.0190 }
 };
 
 // Configuración de iconos por tipo de emergencia
@@ -63,7 +73,7 @@ function vibrarAlerta(patron = [120, 60, 120]) {
   }
 }
 
-// ─── Monitoreo periódico de asignaciones ─────────────────────────────────────
+// ─── Monitoreo Realtime de asignaciones ──────────────────────────────────────
 
 async function verificarAsignacionesAgente() {
   if (!supabaseClient) {
@@ -76,7 +86,7 @@ async function verificarAsignacionesAgente() {
   try {
     const { data: miCaso, error } = await supabaseClient
       .from('incidentes')
-      .select('ticket,tipo,referencia,nota_evidencia,ubicacion,estado,unidad_asignada,unidad,unidad_codigo,eta_minutos,timestamp,tiene_foto,tiene_audio,tiene_audio_evidencia')
+      .select(COLUMNAS_LIGERAS_INCIDENTES_SERENO)
       .eq('unidad_asignada', serenoState.agenteCodigo)
       .in('estado', ['asignado', 'en_camino'])
       .order('timestamp', { ascending: false })
@@ -99,19 +109,7 @@ async function verificarAsignacionesAgente() {
       return;
     }
 
-    const esNuevaAsignacion = serenoState.incidenteActivoTicket !== miCaso.ticket;
-    serenoState.incidenteActual = {
-      ...(esNuevaAsignacion ? {} : serenoState.incidenteActual),
-      ...miCaso
-    };
-    renderizarEmergenciaAsignada(serenoState.incidenteActual);
-    renderizarSectorList([serenoState.incidenteActual]);
-    if (esNuevaAsignacion) {
-      renderizarEvidenciasAsignacion(serenoState.incidenteActual);
-      if (miCaso.tiene_foto || miCaso.tiene_audio || miCaso.tiene_audio_evidencia) {
-        void cargarEvidenciasAsignacion(miCaso.ticket);
-      }
-    }
+    aplicarAsignacionAgente(miCaso);
   } catch (error) {
     console.error('No se pudo consultar la asignación del agente:', error);
     if (serenoState.lastLoadError !== error.message) {
@@ -124,21 +122,100 @@ async function verificarAsignacionesAgente() {
 }
 
 async function cargarEvidenciasAsignacion(ticket) {
-  try {
-    const { data, error } = await supabaseClient
+  let evidenciaPromise = serenoState.evidenciasPorTicket.get(ticket);
+  if (!evidenciaPromise) {
+    evidenciaPromise = supabaseClient
       .from('incidentes')
       .select('foto,audio,audio_referencia,audio_evidencia,nota_evidencia')
       .eq('ticket', ticket)
-      .maybeSingle();
-    if (error) throw error;
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return data || {};
+      });
+    serenoState.evidenciasPorTicket.set(ticket, evidenciaPromise);
+  }
+
+  try {
+    const data = await evidenciaPromise;
     if (serenoState.incidenteActivoTicket !== ticket || !serenoState.incidenteActual) return;
 
-    Object.assign(serenoState.incidenteActual, data || {});
+    Object.assign(serenoState.incidenteActual, data);
     renderizarEvidenciasAsignacion(serenoState.incidenteActual);
   } catch (error) {
+    serenoState.evidenciasPorTicket.delete(ticket);
     console.error('No se pudieron cargar las evidencias del incidente:', error);
     mostrarToast(error.message || 'No se pudieron cargar las evidencias del incidente.', 'error');
   }
+}
+
+function aplicarAsignacionAgente(caso) {
+  const esNuevaAsignacion = serenoState.incidenteActivoTicket !== caso.ticket;
+  serenoState.incidenteActual = {
+    ...(esNuevaAsignacion ? {} : serenoState.incidenteActual),
+    ...caso
+  };
+  renderizarEmergenciaAsignada(serenoState.incidenteActual);
+  renderizarSectorList([serenoState.incidenteActual]);
+
+  if (esNuevaAsignacion) {
+    renderizarEvidenciasAsignacion(serenoState.incidenteActual);
+    if (caso.tiene_foto || caso.tiene_audio || caso.tiene_audio_evidencia) {
+      void cargarEvidenciasAsignacion(caso.ticket);
+    }
+  }
+}
+
+function aplicarCambioIncidenteRealtime(payload) {
+  const caso = payload.new || {};
+  const ticket = caso.ticket || payload.old?.ticket;
+  const esMiUnidad = caso.unidad_asignada === serenoState.agenteCodigo;
+  const esEstadoActivo = ['asignado', 'en_camino'].includes(caso.estado);
+
+  if (esMiUnidad && esEstadoActivo) {
+    aplicarAsignacionAgente(caso);
+    return;
+  }
+  if (ticket && serenoState.incidenteActivoTicket === ticket) {
+    serenoState.incidenteActual = null;
+    renderizarSinAsignacion();
+    renderizarSectorList([]);
+  }
+}
+
+function actualizarEstadoRealtime(texto, activo) {
+  const indicador = document.getElementById('sereno-realtime-status');
+  if (!indicador) return;
+  indicador.textContent = texto;
+  indicador.classList.toggle('text-success', activo);
+  indicador.classList.toggle('text-warning', !activo);
+}
+
+function suscribirAsignacionesRealtime() {
+  if (!supabaseClient || !serenoState.userId) return;
+  if (serenoState.realtimeChannel) {
+    const canalAnterior = serenoState.realtimeChannel;
+    serenoState.realtimeChannel = null;
+    void supabaseClient.removeChannel(canalAnterior).then(estado => {
+      if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime anterior:', estado);
+    }).catch(error => console.error('Error al cerrar el canal Realtime anterior:', error));
+  }
+
+  serenoState.realtimeChannel = supabaseClient
+    .channel(`sereno-incidentes-${serenoState.agenteCodigo}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'incidentes',
+      filter: `unidad_asignada=eq.${serenoState.agenteCodigo}`
+    }, aplicarCambioIncidenteRealtime)
+    .subscribe(estado => {
+      if (estado === 'SUBSCRIBED') {
+        actualizarEstadoRealtime('Tiempo real activo', true);
+      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(estado)) {
+        actualizarEstadoRealtime('Realtime desconectado', false);
+      }
+    });
 }
 
 function renderizarEmergenciaAsignada(caso) {
@@ -299,6 +376,8 @@ function actualizarMapaSerenazgo(latIncidente, lngIncidente, ticket) {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(serenoState.mapaSereno);
   }
 
+  const popupPatrulla = `<strong>Mi Patrulla (${serenoState.agenteCodigo})</strong>`;
+
   // Marcador de la patrulla
   if (!serenoState.markerAgente) {
     const agenteIcon = L.divIcon({
@@ -309,7 +388,11 @@ function actualizarMapaSerenazgo(latIncidente, lngIncidente, ticket) {
     });
     serenoState.markerAgente = L.marker([serenoState.posicionAgente.lat, serenoState.posicionAgente.lng], { icon: agenteIcon })
       .addTo(serenoState.mapaSereno)
-      .bindPopup('<strong>Mi Patrulla (SR-01)</strong>');
+      .bindPopup(popupPatrulla);
+  } else {
+    serenoState.markerAgente
+      .setLatLng([serenoState.posicionAgente.lat, serenoState.posicionAgente.lng])
+      .setPopupContent(popupPatrulla);
   }
 
   // Marcador del incidente
@@ -440,7 +523,6 @@ async function confirmarCierreSereno() {
   if (modal) modal.classList.add('hidden');
   serenoState.incidenteActual = null;
   renderizarSinAsignacion();
-  void verificarAsignacionesAgente();
 }
 
 // ─── Lista de Emergencias del Sector ─────────────────────────────────────────
@@ -499,6 +581,33 @@ function cambiarPantallaSereno(screenId) {
   }
 }
 
+async function activarSesionSereno(user) {
+  const metadata = user?.app_metadata || {};
+  const unidadesValidas = Object.keys(POSICIONES_UNIDADES);
+  if (metadata.role !== 'sereno' || !unidadesValidas.includes(metadata.unit_code)) {
+    throw new Error('Esta cuenta no tiene permisos de unidad de campo válida.');
+  }
+
+  serenoState.agenteCodigo = metadata.unit_code;
+  serenoState.agenteNombre = metadata.nombre || `Patrulla ${metadata.unit_code}`;
+  serenoState.userId = user.id;
+  serenoState.posicionAgente = { ...POSICIONES_UNIDADES[metadata.unit_code] };
+
+  const nombreEl = document.getElementById('sereno-agente-nombre');
+  const perfilNombre = document.getElementById('perfil-nombre');
+  if (nombreEl) nombreEl.textContent = serenoState.agenteNombre;
+  if (perfilNombre) perfilNombre.textContent = `${serenoState.agenteNombre} (${serenoState.agenteCodigo})`;
+
+  document.getElementById('screen-login-sereno')?.classList.remove('active');
+  document.getElementById('screen-login-sereno')?.classList.add('hidden');
+  document.getElementById('sereno-header')?.classList.remove('hidden');
+  document.getElementById('sereno-bottom-nav')?.classList.remove('hidden');
+  cambiarPantallaSereno('screen-asignacion');
+  actualizarMapaSerenazgo(null, null, null);
+  suscribirAsignacionesRealtime();
+  await verificarAsignacionesAgente();
+}
+
 // ─── Inicialización y Login de Serenazgo ────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -522,31 +631,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const email = username.includes('@') ? username : `${username}@personal.serenazgo.invalid`;
         const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        const metadata = data.user?.app_metadata || {};
-        if (metadata.role !== 'sereno' || !metadata.unit_code) {
+        if (!data.user) {
           await supabaseClient.auth.signOut({ scope: 'local' });
-          throw new Error('Esta cuenta no tiene permisos de unidad de campo.');
+          throw new Error('Supabase no devolvió la sesión de la unidad.');
+        }
+        if (data.user.app_metadata?.role !== 'sereno' ||
+            !Object.prototype.hasOwnProperty.call(POSICIONES_UNIDADES, data.user.app_metadata?.unit_code)) {
+          await supabaseClient.auth.signOut({ scope: 'local' });
+          throw new Error('Esta cuenta no tiene permisos de unidad de campo válida.');
         }
 
-        serenoState.agenteCodigo = metadata.unit_code;
-        serenoState.agenteNombre = metadata.nombre || `Patrulla ${metadata.unit_code}`;
-        serenoState.userId = data.user.id;
-
-        document.getElementById('screen-login-sereno')?.classList.remove('active');
-        document.getElementById('screen-login-sereno')?.classList.add('hidden');
-        document.getElementById('sereno-header')?.classList.remove('hidden');
-        document.getElementById('sereno-bottom-nav')?.classList.remove('hidden');
-
-        const nombreEl = document.getElementById('sereno-agente-nombre');
-        const perfilNombre = document.getElementById('perfil-nombre');
-        if (nombreEl) nombreEl.textContent = serenoState.agenteNombre;
-        if (perfilNombre) perfilNombre.textContent = `${serenoState.agenteNombre} (${serenoState.agenteCodigo})`;
-
-        cambiarPantallaSereno('screen-asignacion');
-        await verificarAsignacionesAgente();
-
-        if (serenoState.pollingInterval) clearInterval(serenoState.pollingInterval);
-        serenoState.pollingInterval = setInterval(verificarAsignacionesAgente, 3000);
+        await activarSesionSereno(data.user);
       } catch (error) {
         console.error('No se pudo iniciar sesión como agente:', error);
         if (errorEl) {
@@ -561,6 +656,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2. Botón "En Camino"
   document.getElementById('btn-en-camino')?.addEventListener('click', marcarEnCamino);
+  document.getElementById('btn-refresh-sereno')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    if (button.disabled || serenoState.refreshInFlight) return;
+    serenoState.refreshInFlight = true;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span>Actualizando…</span>';
+    try {
+      await verificarAsignacionesAgente();
+    } finally {
+      serenoState.refreshInFlight = false;
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = original;
+    }
+  });
 
   // 3. Botón "Atendido" (Abre modal de cierre con observaciones)
   document.getElementById('btn-atendido')?.addEventListener('click', abrirModalCierreSereno);
@@ -581,11 +693,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 6. Logout
   document.getElementById('btn-logout-sereno')?.addEventListener('click', async () => {
-    if (serenoState.pollingInterval) clearInterval(serenoState.pollingInterval);
-    serenoState.pollingInterval = null;
+    if (serenoState.realtimeChannel && supabaseClient) {
+      const canal = serenoState.realtimeChannel;
+      serenoState.realtimeChannel = null;
+      void supabaseClient.removeChannel(canal).then(estado => {
+        if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del sereno:', estado);
+      }).catch(error => console.error('Error al cerrar el canal Realtime del sereno:', error));
+    }
     serenoState.incidenteActual = null;
     serenoState.incidenteActivoTicket = null;
     serenoState.userId = null;
+    serenoState.evidenciasPorTicket.clear();
     renderizarSinAsignacion();
     renderizarSectorList([]);
     document.getElementById('modal-cierre-sereno')?.classList.add('hidden');
@@ -603,6 +721,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!supabaseClient) {
     console.error('No se pudo cargar la librería cliente de Supabase.');
+  } else {
+    supabaseClient.auth.getSession().then(async ({ data, error }) => {
+      if (error) throw error;
+      const user = data.session?.user;
+      if (user?.app_metadata?.role === 'sereno') {
+        await activarSesionSereno(user);
+      }
+    }).catch(error => {
+      console.error('No se pudo restaurar la sesión del sereno:', error);
+    });
   }
   console.log('Módulo Serenazgo en Campo inicializado con persistencia Supabase.');
 });

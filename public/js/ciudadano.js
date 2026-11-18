@@ -42,13 +42,19 @@ const state = {
   audioEvidenceStream: null,
   fotoBlob: null,
   ticketActual: null,
+  ticketSeguimientoActual: null,
   dniActual: null,
+  historialIncidentes: [],
+  historialRealtimeChannel: null,
+  historialDniSuscrito: null,
+  historialCargaEnCurso: false,
+  historialEventosPendientes: [],
+  historialError: null,
   mapaObj: null,
   markerObj: null,
   grabandoVoz: false,
   grabandoEvidencia: false,
   envioEnCurso: false,
-  pollingSeguimiento: null,
   consultaSeguimientoEnCurso: false,
 };
 
@@ -107,40 +113,64 @@ function optimizarFotoComoDataURL(file) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
-    const leerOriginal = () => leerArchivoComoDataURL(file).then(resolve, reject);
     image.onload = () => {
       URL.revokeObjectURL(objectUrl);
-      const maxDimension = 1600;
-      const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+      if (!image.naturalWidth || !image.naturalHeight) {
+        reject(new Error('La fotografía seleccionada no tiene dimensiones válidas.'));
+        return;
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = Math.round(image.naturalWidth * scale);
-      canvas.height = Math.round(image.naturalHeight * scale);
       const context = canvas.getContext('2d');
       if (!context) {
-        leerOriginal();
+        reject(new Error('No se pudo preparar el lienzo para comprimir la fotografía.'));
         return;
       }
 
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(async blob => {
+      const maxBytes = 80 * 1024;
+      const maxDimension = 800;
+      const qualityLevels = [0.65, 0.55, 0.45, 0.35, 0.25];
+      const dimensions = [800, 720, 640, 560, 480, 400, 320];
+      const dibujarYComprimir = (dimension, quality) => new Promise((resolveBlob, rejectBlob) => {
+        const scale = Math.min(1, dimension / Math.max(image.naturalWidth, image.naturalHeight));
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          if (blob) resolveBlob(blob);
+          else rejectBlob(new Error('El navegador no pudo comprimir la fotografía.'));
+        }, 'image/jpeg', quality);
+      });
+
+      (async () => {
+        let fotoComprimida = null;
+        const dimensionesAUsar = dimensions.filter(dimension => dimension <= maxDimension);
+        for (const dimension of dimensionesAUsar) {
+          for (const calidad of qualityLevels) {
+            const blob = await dibujarYComprimir(dimension, calidad);
+            if (blob.size < maxBytes) {
+              fotoComprimida = blob;
+              break;
+            }
+          }
+          if (fotoComprimida) break;
+        }
+        if (!fotoComprimida) {
+          throw new Error('La fotografía no pudo reducirse a menos de 80 KB. Adjunta una imagen más pequeña.');
+        }
         canvas.width = 0;
         canvas.height = 0;
-        if (!blob) {
-          leerOriginal();
-          return;
-        }
-        try {
-          resolve(await leerArchivoComoDataURL(blob));
-        } catch (error) {
-          reject(error);
-        }
-      }, 'image/jpeg', 0.75);
+        resolve(await leerArchivoComoDataURL(fotoComprimida));
+      })().catch(error => {
+        canvas.width = 0;
+        canvas.height = 0;
+        reject(error);
+      });
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      leerOriginal();
+      reject(new Error('No se pudo abrir la fotografía seleccionada.'));
     };
     image.src = objectUrl;
   });
@@ -164,6 +194,10 @@ function mostrarPantalla(screenId) {
     target.classList.add('active');
     target.removeAttribute('aria-hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if (screenId === 'screen-seguimiento' && state.dniActual) {
+    void cargarHistorialCiudadano();
   }
 
   // Actualizar indicador de pasos
@@ -287,8 +321,10 @@ async function autenticarCiudadano(action, mensajeExito) {
     if (sessionError) throw sessionError;
 
     state.dniActual = dni;
+    suscribirHistorialRealtime();
     mostrarPantalla('screen-home');
     document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
+    document.getElementById('btn-mis-reportes')?.classList.remove('hidden');
     showToast(mensajeExito, 'success');
   } catch (error) {
     console.error('Error de acceso ciudadano:', error);
@@ -753,13 +789,16 @@ async function procesarEnvioReporte() {
 
 // ─── Seguimiento en Tiempo Real (RF-04, RF-05) ───────────────────────────────
 
+const COLUMNAS_HISTORIAL_CIUDADANO = 'ticket, tipo, prioridad, estado, referencia, nota_evidencia, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, atendido_at';
+const CAMPOS_HISTORIAL_CIUDADANO = COLUMNAS_HISTORIAL_CIUDADANO.split(',').map(columna => columna.trim());
+
 async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false) {
-  if (!codigoTicket) return;
+  if (!codigoTicket) return false;
   if (!supabaseClient) {
     if (notificarNoEncontrado) showToast('No se pudo conectar con Supabase para consultar el seguimiento.', 'error');
-    return;
+    return false;
   }
-  if (state.consultaSeguimientoEnCurso) return;
+  if (state.consultaSeguimientoEnCurso) return false;
   state.consultaSeguimientoEnCurso = true;
 
   try {
@@ -775,62 +814,269 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
           ? `El ticket ${codigoTicket} no fue encontrado`
           : 'No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
       }
-      return;
+      return false;
     }
 
-    const badgeEstado = document.getElementById('badge-estado');
-    if (badgeEstado) {
-      badgeEstado.className = `badge-status badge-${incidente.estado}`;
-      badgeEstado.textContent = incidente.estado.replace('_', ' ').toUpperCase();
-    }
-
-    const etapas = ['recibido', 'asignado', 'en_camino', 'atendido'];
-    const indiceActual = etapas.indexOf(incidente.estado);
-    document.querySelectorAll('.timeline-step-item').forEach(stepItem => {
-      const estadoStep = stepItem.getAttribute('data-estado');
-      const idxStep = etapas.indexOf(estadoStep);
-      stepItem.classList.remove('done', 'active');
-      if (idxStep < indiceActual) {
-        stepItem.classList.add('done');
-      } else if (idxStep === indiceActual) {
-        stepItem.classList.add('active');
-      }
-    });
-
-    const panelPatrulla = document.getElementById('info-unidad-panel');
-    if (panelPatrulla) {
-      if (incidente.unidad || incidente.unidad_codigo) {
-        panelPatrulla.classList.remove('hidden');
-        const nombreEl = document.getElementById('unidad-nombre');
-        const codigoEl = document.getElementById('unidad-codigo');
-        const etaEl = document.getElementById('eta-valor');
-        if (nombreEl) nombreEl.textContent = incidente.unidad || 'Patrulla Asignada';
-        if (codigoEl) codigoEl.textContent = incidente.unidad_codigo ? `Código: ${incidente.unidad_codigo}` : 'Serenazgo Chorrillos';
-        if (etaEl) etaEl.textContent = incidente.eta_minutos || '3';
-      } else {
-        panelPatrulla.classList.add('hidden');
-      }
-    }
+    renderizarEstadoTicket(incidente);
+    return true;
   } catch (error) {
     console.error('No se pudo consultar el seguimiento:', error);
     if (notificarNoEncontrado) {
       showToast('No se pudo consultar el estado. Inténtalo nuevamente.', 'error');
     }
+    return false;
   } finally {
     state.consultaSeguimientoEnCurso = false;
   }
 }
 
-function activarMonitoreoSeguimiento(ticket) {
-  if (state.pollingSeguimiento) {
-    clearInterval(state.pollingSeguimiento);
+function renderizarEstadoTicket(incidente) {
+  const badgeEstado = document.getElementById('badge-estado');
+  if (badgeEstado) {
+    badgeEstado.className = `badge-status badge-${incidente.estado}`;
+    badgeEstado.textContent = String(incidente.estado || '').replace('_', ' ').toUpperCase();
   }
-  consultarEstadoTicket(ticket, true);
 
-  // Polling cada 2 segundos para reflejar cambios del Operador o Serenazgo casi en vivo
-  state.pollingSeguimiento = setInterval(() => {
-    consultarEstadoTicket(ticket);
-  }, 2000);
+  const etapas = ['recibido', 'asignado', 'en_camino', 'atendido'];
+  const indiceActual = etapas.indexOf(incidente.estado);
+  document.querySelectorAll('.timeline-step-item').forEach(stepItem => {
+    const estadoStep = stepItem.getAttribute('data-estado');
+    const idxStep = etapas.indexOf(estadoStep);
+    stepItem.classList.remove('done', 'active');
+    if (idxStep < indiceActual) {
+      stepItem.classList.add('done');
+    } else if (idxStep === indiceActual) {
+      stepItem.classList.add('active');
+    }
+  });
+
+  const panelPatrulla = document.getElementById('info-unidad-panel');
+  if (panelPatrulla) {
+    if (incidente.unidad || incidente.unidad_codigo) {
+      panelPatrulla.classList.remove('hidden');
+      const nombreEl = document.getElementById('unidad-nombre');
+      const codigoEl = document.getElementById('unidad-codigo');
+      const etaEl = document.getElementById('eta-valor');
+      if (nombreEl) nombreEl.textContent = incidente.unidad || 'Patrulla Asignada';
+      if (codigoEl) codigoEl.textContent = incidente.unidad_codigo ? `Código: ${incidente.unidad_codigo}` : 'Serenazgo Chorrillos';
+      if (etaEl) etaEl.textContent = incidente.eta_minutos || '3';
+    } else {
+      panelPatrulla.classList.add('hidden');
+    }
+  }
+}
+
+function activarMonitoreoSeguimiento(ticket) {
+  const ticketNormalizado = String(ticket || '').trim().toUpperCase();
+  if (!ticketNormalizado) return;
+  state.ticketSeguimientoActual = ticketNormalizado;
+  if (state.dniActual) suscribirHistorialRealtime();
+  void consultarEstadoTicket(ticketNormalizado, true);
+}
+
+function actualizarEstadoHistorialRealtime(texto, activo) {
+  const indicador = document.getElementById('ciudadano-realtime-status');
+  if (!indicador) return;
+  indicador.textContent = texto;
+  indicador.classList.toggle('text-success', activo);
+  indicador.classList.toggle('text-warning', !activo);
+}
+
+function renderizarHistorialCiudadano() {
+  const lista = document.getElementById('ciudadano-historial-lista');
+  if (!lista) return;
+  lista.replaceChildren();
+
+  if (state.historialError && !state.historialIncidentes.length) {
+    const error = document.createElement('p');
+    error.className = 'text-danger small mb-0';
+    error.textContent = state.historialError;
+    lista.appendChild(error);
+    return;
+  }
+
+  if (!state.historialIncidentes.length) {
+    const vacio = document.createElement('p');
+    vacio.className = 'text-muted small mb-0';
+    vacio.textContent = 'Aún no tienes solicitudes registradas.';
+    lista.appendChild(vacio);
+    return;
+  }
+
+  const estados = {
+    recibido: 'RECIBIDO',
+    asignado: 'ASIGNADO',
+    en_camino: 'EN CAMINO',
+    atendido: 'ATENDIDO',
+    cancelado: 'CANCELADO'
+  };
+  const iconos = {
+    violencia: 'img/icon-violencia.png',
+    robo: 'img/icon-robo.png',
+    accidente: 'img/icon-accidente.png',
+    auxilio: 'img/icon-auxilio.png',
+    otros: 'img/icon-otros.png'
+  };
+
+  state.historialIncidentes.forEach(incidente => {
+    const itemLista = document.createElement('div');
+    itemLista.setAttribute('role', 'listitem');
+    const tarjeta = document.createElement('button');
+    tarjeta.type = 'button';
+    tarjeta.className = 'ciudadano-historial-card';
+    tarjeta.dataset.ticket = incidente.ticket;
+    tarjeta.setAttribute('aria-label', `Abrir seguimiento del ticket ${incidente.ticket}, ${estados[incidente.estado] || incidente.estado}`);
+
+    const cabecera = document.createElement('span');
+    cabecera.className = 'ciudadano-historial-card-header';
+    const ticket = document.createElement('strong');
+    ticket.textContent = incidente.ticket || 'Ticket sin código';
+    const estado = document.createElement('span');
+    estado.className = `badge-status badge-${incidente.estado}`;
+    estado.textContent = estados[incidente.estado] || String(incidente.estado || 'Estado desconocido').toUpperCase();
+    cabecera.append(ticket, estado);
+
+    const tipo = document.createElement('span');
+    tipo.className = 'ciudadano-historial-tipo';
+    const icono = document.createElement('img');
+    icono.src = iconos[incidente.tipo] || iconos.otros;
+    icono.alt = '';
+    icono.setAttribute('aria-hidden', 'true');
+    const tipoTexto = document.createElement('span');
+    tipoTexto.textContent = CATALOGO_TIPOS[incidente.tipo]?.nombre || 'Otro incidente';
+    tipo.append(icono, tipoTexto);
+
+    const fecha = document.createElement('span');
+    fecha.className = 'ciudadano-historial-meta';
+    const fechaValida = incidente.timestamp ? new Date(incidente.timestamp) : null;
+    fecha.textContent = fechaValida && !Number.isNaN(fechaValida.getTime())
+      ? fechaValida.toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' })
+      : 'Fecha no disponible';
+
+    const detalle = document.createElement('span');
+    detalle.className = 'ciudadano-historial-meta';
+    const unidad = incidente.unidad || incidente.unidad_codigo;
+    detalle.textContent = unidad ? `Unidad: ${unidad}` : 'Unidad pendiente de asignación';
+
+    tarjeta.append(cabecera, tipo, fecha, detalle);
+    if (incidente.observaciones) {
+      const observaciones = document.createElement('span');
+      observaciones.className = 'ciudadano-historial-observaciones';
+      observaciones.textContent = `Observaciones de cierre: ${incidente.observaciones}`;
+      tarjeta.appendChild(observaciones);
+    }
+    itemLista.appendChild(tarjeta);
+    lista.appendChild(itemLista);
+  });
+}
+
+function aplicarIncidenteHistorialRealtime(payload, aplicarTrasCarga = false) {
+  if (state.historialCargaEnCurso && !aplicarTrasCarga) {
+    state.historialEventosPendientes.push(payload);
+    return;
+  }
+  const registro = payload.new || {};
+  const ticket = registro.ticket;
+  if (!ticket) return;
+  const incidenteLigero = {};
+  CAMPOS_HISTORIAL_CIUDADANO.forEach(campo => {
+    if (Object.prototype.hasOwnProperty.call(registro, campo)) {
+      incidenteLigero[campo] = registro[campo];
+    }
+  });
+  const indice = state.historialIncidentes.findIndex(item => item.ticket === ticket);
+  if (indice >= 0) {
+    Object.assign(state.historialIncidentes[indice], incidenteLigero);
+  } else if (payload.eventType === 'INSERT') {
+    state.historialIncidentes.push(incidenteLigero);
+  } else {
+    return;
+  }
+  state.historialIncidentes.sort((a, b) =>
+    new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+  );
+  renderizarHistorialCiudadano();
+  if (ticket === state.ticketSeguimientoActual) renderizarEstadoTicket(incidenteLigero);
+}
+
+function suscribirHistorialRealtime() {
+  const dni = state.dniActual;
+  if (!supabaseClient || !dni) return;
+  if (state.historialRealtimeChannel && state.historialDniSuscrito === dni) return;
+  if (state.historialRealtimeChannel) {
+    const canalAnterior = state.historialRealtimeChannel;
+    state.historialRealtimeChannel = null;
+    void supabaseClient.removeChannel(canalAnterior).then(estado => {
+      if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del ciudadano:', estado);
+    }).catch(error => console.error('Error al cerrar el canal Realtime del ciudadano:', error));
+  }
+
+  state.historialDniSuscrito = dni;
+  state.historialRealtimeChannel = supabaseClient
+    .channel(`ciudadano-incidentes-${dni}`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'incidentes',
+      filter: `ciudadano_dni=eq.${dni}`
+    }, aplicarIncidenteHistorialRealtime)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'incidentes',
+      filter: `ciudadano_dni=eq.${dni}`
+    }, aplicarIncidenteHistorialRealtime)
+    .subscribe(estado => {
+      if (estado === 'SUBSCRIBED') {
+        actualizarEstadoHistorialRealtime('Tiempo real activo', true);
+      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(estado)) {
+        actualizarEstadoHistorialRealtime('Realtime desconectado · Actualiza manualmente', false);
+      }
+    });
+}
+
+async function cargarHistorialCiudadano() {
+  if (state.historialCargaEnCurso) return false;
+  if (!supabaseClient || !state.dniActual) {
+    showToast('Inicia sesión como ciudadano para consultar tus solicitudes.', 'error');
+    return false;
+  }
+  state.historialCargaEnCurso = true;
+  state.historialEventosPendientes = [];
+  const lista = document.getElementById('ciudadano-historial-lista');
+  if (lista && !state.historialIncidentes.length) {
+    lista.textContent = 'Cargando tus solicitudes…';
+  }
+
+  try {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError) throw sessionError;
+    const usuario = sessionData.session?.user;
+    if (usuario?.app_metadata?.role !== 'ciudadano' ||
+        usuario.app_metadata.dni !== state.dniActual) {
+      throw new Error('Tu sesión ciudadana venció. Inicia sesión nuevamente.');
+    }
+
+    suscribirHistorialRealtime();
+    const { data, error } = await supabaseClient
+      .from('incidentes')
+      .select(COLUMNAS_HISTORIAL_CIUDADANO)
+      .eq('ciudadano_dni', state.dniActual)
+      .order('timestamp', { ascending: false });
+    if (error) throw error;
+    state.historialIncidentes = data || [];
+    state.historialError = null;
+  } catch (error) {
+    console.error('No se pudo cargar el historial del ciudadano:', error);
+    state.historialError = error.message || 'No se pudo cargar tu historial.';
+    showToast(error.message || 'No se pudo cargar el historial de solicitudes.', 'error');
+  } finally {
+    const eventosPendientes = state.historialEventosPendientes.splice(0);
+    eventosPendientes.forEach(payload => aplicarIncidenteHistorialRealtime(payload, true));
+    state.historialCargaEnCurso = false;
+    renderizarHistorialCiudadano();
+  }
+  return !state.historialError;
 }
 
 // ─── Inicialización de Eventos del DOM ───────────────────────────────────────
@@ -945,7 +1191,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const volverSeg = document.getElementById('btn-volver-seguimiento');
   if (volverSeg) {
     volverSeg.addEventListener('click', () => {
-      if (state.pollingSeguimiento) clearInterval(state.pollingSeguimiento);
       mostrarPantalla('screen-home');
     });
   }
@@ -1034,8 +1279,18 @@ document.addEventListener('DOMContentLoaded', () => {
           return true;
         }).catch((error) => {
           console.error('No se pudo convertir la fotografía:', error);
-          showToast('No se pudo leer la fotografía seleccionada.', 'error');
-          return false;
+          showToast(error.message || 'No se pudo leer la fotografía seleccionada.', 'error');
+          if (state.fotoBlob === file) {
+            state.fotoBlob = null;
+            fotoBase64 = null;
+            inputFoto.value = '';
+            if (previewFoto) {
+              previewFoto.removeAttribute('src');
+              previewFoto.classList.add('d-none');
+            }
+            if (labelFoto) labelFoto.textContent = 'Tomar o adjuntar foto';
+          }
+          return true;
         });
       } else {
         state.fotoBlob = null;
@@ -1077,6 +1332,64 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  document.getElementById('btn-actualizar-estado')?.addEventListener('click', () => {
+    const button = document.getElementById('btn-actualizar-estado');
+    const ticket = document.getElementById('input-ticket')?.value.trim();
+    if (!ticket) {
+      showToast('Ingresa o selecciona un ticket para consultar su estado.', 'info');
+      return;
+    }
+    if (button.disabled) return;
+    state.ticketSeguimientoActual = ticket.toUpperCase();
+    suscribirHistorialRealtime();
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span>Actualizando…</span>';
+    void consultarEstadoTicket(ticket, true).then(actualizado => {
+      if (actualizado) showToast('Estado actualizado.', 'success');
+    }).finally(() => {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = original;
+    });
+  });
+
+  document.getElementById('btn-refrescar-historial-ciudadano')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span>Actualizando…</span>';
+    try {
+      const actualizado = await cargarHistorialCiudadano();
+      if (actualizado) showToast('Historial actualizado.', 'success');
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.innerHTML = original;
+    }
+  });
+
+  document.getElementById('btn-mis-reportes')?.addEventListener('click', () => {
+    mostrarPantalla('screen-seguimiento');
+  });
+
+  document.getElementById('ciudadano-historial-lista')?.addEventListener('click', event => {
+    const tarjeta = event.target.closest('button[data-ticket]');
+    if (!tarjeta) return;
+    const ticket = tarjeta.dataset.ticket;
+    const pantallaSeguimiento = document.getElementById('screen-seguimiento');
+    if (!pantallaSeguimiento?.classList.contains('active')) {
+      mostrarPantalla('screen-seguimiento');
+    }
+    const inputTicket = document.getElementById('input-ticket');
+    if (inputTicket) inputTicket.value = ticket;
+    activarMonitoreoSeguimiento(ticket);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   const btnNuevoRep = document.getElementById('btn-nuevo-reporte');
   if (btnNuevoRep) {
@@ -1143,8 +1456,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const user = data.session?.user;
       if (user?.app_metadata?.role === 'ciudadano') {
         state.dniActual = user.app_metadata.dni;
+        suscribirHistorialRealtime();
         mostrarPantalla('screen-home');
         document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
+        document.getElementById('btn-mis-reportes')?.classList.remove('hidden');
       }
     }).catch(error => console.error('No se pudo restaurar la sesión ciudadana:', error));
   }
