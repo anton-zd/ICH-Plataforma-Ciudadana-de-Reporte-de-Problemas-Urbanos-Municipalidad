@@ -34,6 +34,7 @@ const dashboardState = {
   pendingStatsRefresh: false,
   evidenciasPorTicket: new Map(),
   casesSignature: null,
+  focoAnteriorDetalle: null,
 };
 
 // Flota de Unidades de Serenazgo de Chorrillos disponibles para despacho
@@ -67,6 +68,14 @@ function escaparHTML(valor) {
     '"': '&quot;',
     "'": '&#39;'
   })[caracter]);
+}
+
+function describirUbicacion(caso) {
+  const ubicacion = caso.ubicacion || {};
+  const direccion = ubicacion.direccion || ubicacion.direccionAprox || 'Dirección no disponible';
+  const lat = ubicacion.lat != null && Number.isFinite(Number(ubicacion.lat)) ? Number(ubicacion.lat).toFixed(5) : '—';
+  const lng = ubicacion.lng != null && Number.isFinite(Number(ubicacion.lng)) ? Number(ubicacion.lng).toFixed(5) : '—';
+  return `${direccion} (Lat: ${lat}, Lng: ${lng})`;
 }
 
 function actualizarFirmaCasos() {
@@ -343,7 +352,7 @@ function renderizarDashboard() {
             <div class="inc-tipo">${tipo}</div>
             <div class="inc-loc text-truncate">
               <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-              Lat: ${caso.ubicacion?.lat ? caso.ubicacion.lat.toFixed(4) : '-12.1611'}, Lng: ${caso.ubicacion?.lng ? caso.ubicacion.lng.toFixed(4) : '-77.0210'}
+              ${escaparHTML(describirUbicacion(caso))}
               ${referencia ? ` · <span class="text-dark fw-semibold">"${referencia}"</span>` : ''}
             </div>
             ${unidad ? `<div class="small text-primary fw-bold mt-1"><i class="bi bi-car-front-fill me-1"></i>Despachado a: ${unidad} (ETA: ${caso.eta_minutos || 3} min)</div>` : ''}
@@ -418,7 +427,8 @@ function renderizarEvidenciaModal(caso) {
 
 async function cargarEvidenciasIncidente(ticket) {
   const caso = dashboardState.casos.find(item => item.ticket === ticket);
-  if (!caso || (!caso.tiene_foto && !caso.tiene_audio && !caso.tiene_audio_evidencia)) return;
+  if (!caso) throw new Error('No se encontró el incidente.');
+  if (!caso.tiene_foto && !caso.tiene_audio && !caso.tiene_audio_evidencia) return {};
 
   let evidenciaPromise = dashboardState.evidenciasPorTicket.get(ticket);
   if (!evidenciaPromise) {
@@ -439,15 +449,10 @@ async function cargarEvidenciasIncidente(ticket) {
   }
 
   try {
-    const evidencia = await evidenciaPromise;
-    if (dashboardState.incidenteSeleccionado?.ticket !== ticket) return;
-    Object.assign(caso, evidencia);
-    caso.audio = evidencia.audio_evidencia || evidencia.audio_referencia || evidencia.audio || null;
-    renderizarEvidenciaModal(caso);
+    return await evidenciaPromise;
   } catch (error) {
     dashboardState.evidenciasPorTicket.delete(ticket);
-    console.error('No se pudo cargar la evidencia del incidente:', error);
-    notify(error.message || 'No se pudo cargar la evidencia del incidente.', 'error');
+    throw error;
   }
 }
 
@@ -466,8 +471,16 @@ window.abrirModalAsignacion = function(ticket) {
 
   if (modalTipo) modalTipo.textContent = `${TIPO_CONFIG[caso.tipo]?.icon || '🚨'} Emergencia por ${caso.tipo.toUpperCase()}`;
   if (modalTicket) modalTicket.textContent = `Código: ${caso.ticket}`;
+  document.getElementById('modal-inc-ubicacion').textContent = describirUbicacion(caso);
   renderizarEvidenciaModal(caso);
-  void cargarEvidenciasIncidente(ticket);
+  void cargarEvidenciasIncidente(ticket).then(evidencia => {
+    if (dashboardState.incidenteSeleccionado?.ticket !== ticket ||
+        document.getElementById('modal-asignar')?.classList.contains('hidden')) return;
+    renderizarEvidenciaModal({ ...caso, ...evidencia, audio: evidencia.audio_evidencia || evidencia.audio_referencia || evidencia.audio });
+  }).catch(error => {
+    console.error('No se pudo cargar la evidencia del incidente:', error);
+    notify(error.message || 'No se pudo cargar la evidencia del incidente.', 'error');
+  });
 
   if (modalPrioridad) {
     const esAlta = (caso.tipo === 'violencia' || caso.tipo === 'auxilio');
@@ -666,6 +679,17 @@ async function confirmarCierreIncidente() {
 function cerrarModal(modalId) {
   const m = document.getElementById(modalId);
   if (m) m.classList.add('hidden');
+  if (modalId === 'modal-detalle-historial' && m) {
+    delete m.dataset.ticket;
+    m.querySelectorAll('audio').forEach(audio => {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    });
+    document.getElementById('detalle-historial-foto')?.removeAttribute('src');
+    if (dashboardState.focoAnteriorDetalle?.isConnected) dashboardState.focoAnteriorDetalle.focus();
+    dashboardState.focoAnteriorDetalle = null;
+  }
   if (modalId === 'modal-asignar') {
     renderizarEvidenciaModal({});
     if (dashboardState.incidenteSeleccionado) {
@@ -750,31 +774,51 @@ function inicializarMapaTactico() {
   setTimeout(() => dashboardState.mapaDashboard.invalidateSize(), 200);
 }
 
+function obtenerHistorialFiltrado() {
+  const buscar = (document.getElementById('historial-filtro-buscar')?.value || '').trim().toLowerCase();
+  const tipo = document.getElementById('historial-filtro-tipo')?.value || '';
+  const estado = document.getElementById('historial-filtro-estado')?.value || '';
+  const patrulla = document.getElementById('historial-filtro-patrulla')?.value || '';
+  return obtenerCasos().filter(caso =>
+    ['atendido', 'cancelado'].includes(caso.estado) &&
+    String(caso.ticket || '').toLowerCase().includes(buscar) &&
+    (!tipo || caso.tipo === tipo) &&
+    (!estado || caso.estado === estado) &&
+    (!patrulla || [caso.unidad_codigo, caso.unidad_asignada, caso.unidad].some(unidad => unidad === patrulla))
+  );
+}
+
 function renderizarHistorial() {
   const tbody = document.getElementById('historial-tbody');
   if (!tbody) return;
 
-  const cerrados = obtenerCasos().filter(c => c.estado === 'atendido' || c.estado === 'cancelado');
+  const cerrados = obtenerHistorialFiltrado();
+  const total = obtenerCasos().filter(c => ['atendido', 'cancelado'].includes(c.estado)).length;
+  const contador = document.getElementById('historial-contador');
+  if (contador) contador.textContent = `Mostrando ${cerrados.length} de ${total} registros`;
   if (cerrados.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Aún no hay incidentes en el historial.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No hay incidentes que coincidan con los filtros.</td></tr>';
     return;
   }
 
   tbody.innerHTML = cerrados.map(c => `
     <tr>
       <td><code>${escaparHTML(c.ticket)}</code></td>
-      <td><strong>${escaparHTML(c.tipo.toUpperCase())}</strong></td>
+      <td><strong>${escaparHTML(String(c.tipo || '').toUpperCase())}</strong></td>
       <td><span class="badge-status badge-${escaparHTML(c.estado)}">${escaparHTML(c.estado)}</span></td>
       <td>${escaparHTML(c.unidad || '—')}</td>
       <td class="small text-muted">${c.atendido_at ? new Date(c.atendido_at).toLocaleString('es-PE') : 'Reciente'}</td>
       <td class="small">${escaparHTML(c.observaciones || 'Atendido satisfactoriamente')}</td>
+      <td><button type="button" class="btn btn-sm btn-outline-primary fw-semibold rounded-pill" data-action="ver-detalle-historial" data-ticket="${escaparHTML(c.ticket)}"><i class="bi bi-eye me-1" aria-hidden="true"></i> Ver más</button></td>
     </tr>`).join('');
 }
 
 function exportarHistorialExcel() {
-  const casos = obtenerCasos().filter(caso =>
-    ['atendido', 'cancelado', 'recibido', 'asignado', 'en_camino'].includes(caso.estado)
-  );
+  const casos = obtenerHistorialFiltrado();
+  if (!casos.length) {
+    notify('No hay registros filtrados para exportar.', 'info');
+    return;
+  }
   const limitarTextoCelda = valor => {
     let texto = String(valor ?? '').slice(0, 32767);
     if (/^[=+\-@\t\r]/.test(texto)) texto = `'${texto}`;
@@ -791,6 +835,7 @@ function exportarHistorialExcel() {
     'Prioridad': caso.prioridad === 1 ? 'Alta' : 'Normal',
     'Estado': limitarTextoCelda(caso.estado),
     'Sector Referencial': limitarTextoCelda(obtenerSectorReferencial(caso)),
+    'Dirección': limitarTextoCelda(caso.ubicacion?.direccion || caso.ubicacion?.direccionAprox),
     'Latitud': caso.ubicacion?.lat != null && Number.isFinite(Number(caso.ubicacion.lat)) ? Number(caso.ubicacion.lat) : '',
     'Longitud': caso.ubicacion?.lng != null && Number.isFinite(Number(caso.ubicacion.lng)) ? Number(caso.ubicacion.lng) : '',
     'Referencia Ubicación': limitarTextoCelda(caso.referencia),
@@ -818,6 +863,67 @@ function exportarHistorialExcel() {
     }
   }
 
+  descargarHistorialCsv(filas, nombreBase);
+}
+
+async function abrirModalDetalleHistorial(ticket) {
+    const caso = obtenerCasos().find(item => item.ticket === ticket && ['atendido', 'cancelado'].includes(item.estado));
+    if (!caso) {
+      notify('No se encontró el incidente en el historial.', 'error');
+      return;
+    }
+    const modal = document.getElementById('modal-detalle-historial');
+    cerrarModal('modal-detalle-historial');
+    dashboardState.focoAnteriorDetalle = document.activeElement;
+    modal.dataset.ticket = ticket;
+    const datos = document.getElementById('detalle-historial-datos');
+    const fecha = valor => valor && !Number.isNaN(new Date(valor).getTime()) ? new Date(valor).toLocaleString('es-PE') : '—';
+    const campos = [
+      ['Ticket', caso.ticket], ['Tipo', TIPO_CONFIG[caso.tipo]?.label || caso.tipo],
+      ['Prioridad', caso.prioridad === 1 ? 'Alta' : 'Normal'], ['Estado', caso.estado],
+      ['DNI del ciudadano', caso.ciudadano_dni], ['Unidad asignada', caso.unidad || caso.unidad_codigo || caso.unidad_asignada],
+      ['Fecha de registro', fecha(caso.timestamp)], ['Fecha de cierre', fecha(caso.atendido_at)],
+      ['Ubicación', describirUbicacion(caso)], ['Referencia de ubicación', caso.referencia],
+      ['Nota de evidencia', caso.nota_evidencia], ['Observaciones de campo', caso.observaciones]
+    ];
+    datos.replaceChildren();
+    campos.forEach(([etiqueta, valor]) => {
+      const dt = document.createElement('dt');
+      const dd = document.createElement('dd');
+      dt.textContent = etiqueta;
+      dd.textContent = valor || '—';
+      datos.append(dt, dd);
+    });
+    const carga = document.getElementById('detalle-historial-carga');
+    ['foto', 'referencia', 'audio'].forEach(nombre => document.getElementById(`detalle-historial-${nombre}-container`).classList.add('hidden'));
+    carga.textContent = 'Cargando evidencias…';
+    modal.classList.remove('hidden');
+    document.getElementById('btn-cerrar-detalle-historial').focus();
+    try {
+      const evidencia = await cargarEvidenciasIncidente(ticket);
+      if (modal.dataset.ticket !== ticket || modal.classList.contains('hidden')) return;
+      const medios = [
+        ['foto', 'detalle-historial-foto', evidencia.foto],
+        ['referencia', 'detalle-historial-audio-referencia', evidencia.audio_referencia || evidencia.audio],
+        ['audio', 'detalle-historial-audio-evidencia', evidencia.audio_evidencia]
+      ];
+      let disponibles = 0;
+      medios.forEach(([nombre, id, src]) => {
+        if (!src) return;
+        document.getElementById(id).src = src;
+        document.getElementById(`detalle-historial-${nombre}-container`).classList.remove('hidden');
+        disponibles++;
+      });
+      carga.textContent = disponibles ? '' : 'No hay evidencias multimedia.';
+    } catch (error) {
+      if (modal.dataset.ticket !== ticket || modal.classList.contains('hidden')) return;
+      console.error('No se pudo cargar la evidencia del historial:', error);
+      carga.textContent = 'No se pudieron cargar las evidencias. Cierra y abre el detalle para reintentar.';
+      notify(error.message || 'No se pudo cargar la evidencia del incidente.', 'error');
+    }
+  }
+
+function descargarHistorialCsv(filas, nombreBase) {
   const cabeceras = Object.keys(filas[0] || {
     'Ticket': '', 'DNI Ciudadano': '', 'Tipo': '', 'Prioridad': '', 'Estado': '',
     'Sector Referencial': '', 'Latitud': '', 'Longitud': '', 'Referencia Ubicación': '',
@@ -1318,6 +1424,7 @@ document.addEventListener('DOMContentLoaded', () => {
     dashboardState.evidenciasPorTicket.clear();
     cerrarModal('modal-asignar');
     cerrarModal('modal-cierre');
+    cerrarModal('modal-detalle-historial');
     document.getElementById('dashboard-app')?.classList.add('hidden');
     document.getElementById('login-screen')?.classList.remove('hidden');
     if (supabaseClient) {
@@ -1377,6 +1484,28 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id)?.addEventListener('change', renderizarRendimiento);
   });
   document.getElementById('btn-exportar-excel')?.addEventListener('click', exportarHistorialExcel);
+  const filtroPatrulla = document.getElementById('historial-filtro-patrulla');
+  UNIDADES_DISPONIBLES.forEach(unidad => filtroPatrulla?.add(new Option(unidad.codigo, unidad.codigo)));
+  ['historial-filtro-buscar', 'historial-filtro-tipo', 'historial-filtro-estado', 'historial-filtro-patrulla'].forEach(id => {
+    const filtro = document.getElementById(id);
+    filtro?.addEventListener(id === 'historial-filtro-buscar' ? 'input' : 'change', renderizarHistorial);
+  });
+  document.getElementById('btn-limpiar-filtros-historial')?.addEventListener('click', () => {
+    ['historial-filtro-buscar', 'historial-filtro-tipo', 'historial-filtro-estado', 'historial-filtro-patrulla'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    renderizarHistorial();
+  });
+  document.getElementById('historial-tbody')?.addEventListener('click', event => {
+    const boton = event.target.closest('button[data-action="ver-detalle-historial"]');
+    if (boton) void abrirModalDetalleHistorial(boton.dataset.ticket);
+  });
+  ['btn-cerrar-detalle-historial', 'btn-cerrar-detalle-historial-pie'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => cerrarModal('modal-detalle-historial'));
+  });
+  document.getElementById('modal-detalle-historial')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') cerrarModal('modal-detalle-historial');
+  });
 
   // 6. Confirmación de Despacho y Cierre
   document.getElementById('btn-confirmar-asignacion')?.addEventListener('click', confirmarDespacho);

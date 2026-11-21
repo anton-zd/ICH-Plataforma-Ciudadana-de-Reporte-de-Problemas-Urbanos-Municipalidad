@@ -331,15 +331,18 @@
 
   <div class="app-wrapper">
     <!-- Header Ciudadano con Brand y botón de Seguimiento -->
-    <header class="header-citizen d-flex align-items-center justify-content-between">
+    <header class="header-citizen d-flex align-items-center justify-content-between flex-wrap gap-2">
       <a href="/" class="d-flex align-items-center text-white text-decoration-none" title="Volver a la portada">
         <img src="img/logo-municipalidad.png" alt="Municipalidad de Chorrillos" style="height: 44px; width: auto; object-fit: contain;">
         <span class="ms-2 fw-semibold">Municipalidad de Chorrillos</span>
       </a>
-      <button class="btn btn-sm btn-outline-light rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1 hidden" id="btn-ir-seguimiento" style="min-height: 40px;" aria-label="Consultar ticket de seguimiento">
+      <div class="d-flex align-items-center flex-wrap justify-content-end gap-2">
+      <button class="btn btn-sm btn-outline-light rounded-pill px-3 fw-semibold d-inline-flex align-items-center gap-1 hidden" id="btn-ir-seguimiento" style="min-height: 48px;" aria-label="Consultar ticket de seguimiento">
         <i class="bi bi-clock-history"></i>
         <span>Seguimiento</span>
       </button>
+      <button class="btn btn-sm btn-light rounded-circle hidden" id="btn-logout-ciudadano" type="button" title="Cerrar Sesión" aria-label="Cerrar Sesión" style="width: 48px; height: 48px;"><i class="bi bi-box-arrow-right text-dark"></i></button>
+      </div>
     </header>
 
     <!-- Indicador de Progreso del Flujo (1 -> 2 -> 3) -->

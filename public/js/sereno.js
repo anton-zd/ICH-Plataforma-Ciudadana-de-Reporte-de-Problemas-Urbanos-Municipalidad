@@ -20,6 +20,8 @@ const serenoState = {
   agenteCodigo: 'SR-01', // Código de unidad de patrulla asignada
   agenteNombre: 'Patrulla SR-01 (Centro - Terán)',
   userId: null,
+  sesionVersion: 0,
+  cerrandoSesion: false,
   incidenteActivoTicket: null,
   incidenteActual: null,
   consultaAsignacionEnCurso: false,
@@ -82,6 +84,7 @@ async function verificarAsignacionesAgente() {
   }
   if (serenoState.consultaAsignacionEnCurso) return;
   serenoState.consultaAsignacionEnCurso = true;
+  const sesionVersion = serenoState.sesionVersion;
 
   try {
     const { data: miCaso, error } = await supabaseClient
@@ -92,6 +95,7 @@ async function verificarAsignacionesAgente() {
       .order('timestamp', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (sesionVersion !== serenoState.sesionVersion) return;
     if (error) {
       console.error('No se pudo consultar la asignación del agente:', error);
       if (serenoState.lastLoadError !== error.message) {
@@ -244,7 +248,7 @@ function renderizarEmergenciaAsignada(caso) {
   if (iconoEl) iconoEl.textContent = ICONOS_EMERGENCIA[caso.tipo] || '🚨';
   if (titleEl) titleEl.textContent = `EMERGENCIA: ${caso.tipo.toUpperCase()}`;
   if (descEl) {
-    descEl.textContent = caso.referencia ? `"${caso.referencia}"` : `📍 Lat: ${caso.ubicacion?.lat.toFixed(4)}, Lng: ${caso.ubicacion?.lng.toFixed(4)}`;
+    descEl.textContent = `${describirUbicacion(caso)}${caso.referencia ? ` · Referencia: ${caso.referencia}` : ''}`;
   }
   if (extraBox) extraBox.classList.remove('hidden');
   if (etaVal) etaVal.textContent = caso.eta_minutos || '3';
@@ -408,8 +412,15 @@ function actualizarMapaSerenazgo(latIncidente, lngIncidente, ticket) {
       });
       serenoState.markerIncidente = L.marker([latIncidente, lngIncidente], { icon: incIcon })
         .addTo(serenoState.mapaSereno)
-        .bindPopup(`<strong>Emergencia ${ticket}</strong>`);
+        .bindPopup('');
     }
+    const popup = document.createElement('div');
+    const titulo = document.createElement('strong');
+    titulo.textContent = `Emergencia ${ticket}`;
+    const ubicacion = document.createElement('div');
+    ubicacion.textContent = describirUbicacion(serenoState.incidenteActual || { ubicacion: { lat: latIncidente, lng: lngIncidente } });
+    popup.append(titulo, ubicacion);
+    serenoState.markerIncidente.setPopupContent(popup);
 
     // Ajustar límites de vista para abarcar patrulla e incidente
     const bounds = L.latLngBounds(
@@ -547,11 +558,20 @@ function renderizarSectorList(cases) {
         <div class="sereno-inc-info">
           <div class="inc-tipo">${tipo.toUpperCase()} ${esMio ? '<span class="badge bg-primary ms-1">MI ASIGNACIÓN</span>' : ''}</div>
           <div class="inc-ticket">${escaparHTML(c.ticket)}</div>
+          <div class="inc-ref">${escaparHTML(describirUbicacion(c))}</div>
           <div class="inc-ref">${escaparHTML(c.referencia || 'Sin referencia')}</div>
         </div>
         <span class="badge-status badge-${escaparHTML(c.estado)}">${escaparHTML(c.estado)}</span>
       </div>`;
   }).join('');
+}
+
+function describirUbicacion(caso) {
+  const ubicacion = caso.ubicacion || {};
+  const direccion = ubicacion.direccion || ubicacion.direccionAprox || 'Dirección no disponible';
+  const lat = ubicacion.lat != null && Number.isFinite(Number(ubicacion.lat)) ? Number(ubicacion.lat).toFixed(5) : '—';
+  const lng = ubicacion.lng != null && Number.isFinite(Number(ubicacion.lng)) ? Number(ubicacion.lng).toFixed(5) : '—';
+  return `📍 ${direccion} (Lat: ${lat}, Lng: ${lng})`;
 }
 
 function escaparHTML(valor) {
@@ -581,14 +601,55 @@ function cambiarPantallaSereno(screenId) {
   }
 }
 
+async function cerrarSesionSereno() {
+    if (serenoState.cerrandoSesion) return;
+    if (!supabaseClient) {
+      mostrarToast('No se pudo conectar con Supabase.', 'error');
+      return;
+    }
+    serenoState.cerrandoSesion = true;
+    try {
+      const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+      serenoState.sesionVersion++;
+      const canal = serenoState.realtimeChannel;
+      serenoState.realtimeChannel = null;
+      if (canal) {
+        void supabaseClient.removeChannel(canal).then(estado => {
+          if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del sereno:', estado);
+        }).catch(error => console.error('Error al cerrar el canal Realtime del sereno:', error));
+      }
+      serenoState.incidenteActual = null;
+      serenoState.incidenteActivoTicket = null;
+      serenoState.userId = null;
+      serenoState.evidenciasPorTicket.clear();
+      renderizarSinAsignacion();
+      renderizarSectorList([]);
+      document.getElementById('modal-cierre-sereno')?.classList.add('hidden');
+      document.querySelectorAll('.sereno-screen').forEach(screen => screen.classList.remove('active'));
+      const login = document.getElementById('screen-login-sereno');
+      login?.classList.remove('hidden');
+      login?.classList.add('active');
+      document.getElementById('sereno-header')?.classList.add('hidden');
+      document.getElementById('sereno-bottom-nav')?.classList.add('hidden');
+      document.getElementById('form-login-sereno')?.reset();
+      mostrarToast('Sesión cerrada correctamente', 'success');
+    } catch (error) {
+      console.error('No se pudo cerrar la sesión de agente:', error);
+      mostrarToast(error.message || 'No se pudo cerrar la sesión.', 'error');
+    } finally {
+      serenoState.cerrandoSesion = false;
+    }
+  }
+
 async function activarSesionSereno(user) {
   const metadata = user?.app_metadata || {};
   const unidadesValidas = Object.keys(POSICIONES_UNIDADES);
   if (metadata.role !== 'sereno' || !unidadesValidas.includes(metadata.unit_code)) {
     throw new Error('Esta cuenta no tiene permisos de unidad de campo válida.');
   }
-
   serenoState.agenteCodigo = metadata.unit_code;
+  serenoState.sesionVersion++;
   serenoState.agenteNombre = metadata.nombre || `Patrulla ${metadata.unit_code}`;
   serenoState.userId = user.id;
   serenoState.posicionAgente = { ...POSICIONES_UNIDADES[metadata.unit_code] };
@@ -692,31 +753,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 6. Logout
-  document.getElementById('btn-logout-sereno')?.addEventListener('click', async () => {
-    if (serenoState.realtimeChannel && supabaseClient) {
-      const canal = serenoState.realtimeChannel;
-      serenoState.realtimeChannel = null;
-      void supabaseClient.removeChannel(canal).then(estado => {
-        if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del sereno:', estado);
-      }).catch(error => console.error('Error al cerrar el canal Realtime del sereno:', error));
-    }
-    serenoState.incidenteActual = null;
-    serenoState.incidenteActivoTicket = null;
-    serenoState.userId = null;
-    serenoState.evidenciasPorTicket.clear();
-    renderizarSinAsignacion();
-    renderizarSectorList([]);
-    document.getElementById('modal-cierre-sereno')?.classList.add('hidden');
-    document.querySelectorAll('.sereno-screen').forEach(screen => screen.classList.remove('active'));
-    const login = document.getElementById('screen-login-sereno');
-    login?.classList.remove('hidden');
-    login?.classList.add('active');
-    document.getElementById('sereno-header')?.classList.add('hidden');
-    document.getElementById('sereno-bottom-nav')?.classList.add('hidden');
-    if (supabaseClient) {
-      const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
-      if (error) console.error('No se pudo cerrar la sesión de agente:', error);
-    }
+  ['btn-logout-sereno', 'btn-logout-sereno-header'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', cerrarSesionSereno);
   });
 
   if (!supabaseClient) {

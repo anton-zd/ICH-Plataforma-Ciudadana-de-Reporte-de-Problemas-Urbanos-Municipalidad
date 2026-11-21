@@ -28,6 +28,10 @@ const state = {
   tipoSeleccionado: null,
   lat: -12.1611, // Coordenadas centrales de Chorrillos por defecto
   lng: -77.0210,
+  direccionActual: '',
+  geocoderController: null,
+  geocoderPromise: null,
+  ultimaConsultaGeocoder: 0,
   gpsObtenido: false,
   modoSeleccionManual: false,
   referenciaTexto: '',
@@ -50,6 +54,7 @@ const state = {
   historialCargaEnCurso: false,
   historialEventosPendientes: [],
   historialError: null,
+  sesionVersion: 0,
   mapaObj: null,
   markerObj: null,
   grabandoVoz: false,
@@ -321,9 +326,11 @@ async function autenticarCiudadano(action, mensajeExito) {
     if (sessionError) throw sessionError;
 
     state.dniActual = dni;
+    state.sesionVersion++;
     suscribirHistorialRealtime();
     mostrarPantalla('screen-home');
     document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
+    document.getElementById('btn-logout-ciudadano')?.classList.remove('hidden');
     document.getElementById('btn-mis-reportes')?.classList.remove('hidden');
     showToast(mensajeExito, 'success');
   } catch (error) {
@@ -345,6 +352,59 @@ function actualizarTextoUbicacion(mensaje) {
   if (textEl) textEl.textContent = mensaje;
 }
 
+function mostrarDireccionActual(direccion) {
+  const texto = `📍 ${direccion} (Lat: ${state.lat.toFixed(5)}, Lng: ${state.lng.toFixed(5)})`;
+  actualizarTextoUbicacion(texto);
+  const resumen = document.getElementById('resumen-ubicacion-txt');
+  if (resumen) resumen.textContent = texto;
+}
+
+async function obtenerDireccionDesdeCoordenadas(lat, lng) {
+  state.geocoderController?.abort();
+  const controller = new AbortController();
+  state.geocoderController = controller;
+  state.direccionActual = '';
+  mostrarDireccionActual('Buscando dirección…');
+  const fallback = 'Distrito de Chorrillos, Lima';
+  try {
+    const espera = Math.max(0, 1100 - (Date.now() - state.ultimaConsultaGeocoder));
+    if (espera) {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, espera);
+        controller.signal.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new DOMException('Consulta cancelada', 'AbortError'));
+        }, { once: true });
+      });
+    }
+    state.ultimaConsultaGeocoder = Date.now();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    let response;
+    try {
+      const url = new URL('https://nominatim.openstreetmap.org/reverse');
+      url.search = new URLSearchParams({ format: 'jsonv2', lat: String(lat), lon: String(lng), zoom: '18', addressdetails: '1', 'accept-language': 'es' });
+      response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Geocodificación HTTP ${response.status}`);
+      const data = await response.json();
+      const address = data.address || {};
+      const via = address.road || address.pedestrian || address.residential || address.footway || address.path;
+      const partes = via ? [[via, address.house_number].filter(Boolean).join(' '), address.neighbourhood || address.suburb, address.city_district || address.town || address.city].filter(Boolean) : [];
+      if (state.geocoderController !== controller) return;
+      state.direccionActual = partes.length ? [...new Set(partes)].join(', ') : fallback;
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (error) {
+    if (state.geocoderController !== controller) return;
+    console.warn('No se pudo obtener la dirección:', error);
+    state.direccionActual = fallback;
+  }
+  if (state.geocoderController === controller) {
+    state.geocoderController = null;
+    mostrarDireccionActual(state.direccionActual);
+  }
+}
+
 function actualizarCoordenadas(lat, lng, centrar = false) {
   state.lat = lat;
   state.lng = lng;
@@ -352,7 +412,7 @@ function actualizarCoordenadas(lat, lng, centrar = false) {
   if (state.markerObj) state.markerObj.setLatLng([lat, lng]);
   if (centrar && state.mapaObj) state.mapaObj.setView([lat, lng], 16);
 
-  actualizarTextoUbicacion(`Ubicación seleccionada: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+  state.geocoderPromise = obtenerDireccionDesdeCoordenadas(lat, lng);
   const btnContinuar = document.getElementById('btn-continuar-ubicacion');
   if (btnContinuar) btnContinuar.disabled = false;
 }
@@ -375,12 +435,7 @@ function obtenerUbicacionActual() {
       state.modoSeleccionManual = false;
       if (!state.mapaObj) montarMapaLeaflet(lat, lng);
       state.mapaObj.setView([lat, lng], 16);
-      state.markerObj.setLatLng([lat, lng]);
-      state.lat = lat;
-      state.lng = lng;
-      const btnContinuar = document.getElementById('btn-continuar-ubicacion');
-      if (btnContinuar) btnContinuar.disabled = false;
-      actualizarTextoUbicacion(`Ubicación GPS obtenida: ${state.lat.toFixed(5)}, ${state.lng.toFixed(5)}`);
+      actualizarCoordenadas(lat, lng);
       const btnManual = document.getElementById('btn-gps-manual');
       if (btnManual) {
         btnManual.classList.remove('active');
@@ -470,10 +525,15 @@ async function alternarGrabacionVoz() {
   }
 
   let stream;
+  const sesionVersion = state.sesionVersion;
   try {
     state.grabandoVoz = true;
     btn.disabled = true;
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (sesionVersion !== state.sesionVersion) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
     const chunks = [];
     const opciones = typeof MediaRecorder.isTypeSupported === 'function' &&
       MediaRecorder.isTypeSupported('audio/webm')
@@ -489,6 +549,7 @@ async function alternarGrabacionVoz() {
       if (event.data.size > 0) chunks.push(event.data);
     });
     recorder.addEventListener('stop', () => {
+      if (state.mediaRecorderVoz !== recorder) return;
       state.grabandoVoz = false;
       state.audioBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
       if (state.audioVozUrl) URL.revokeObjectURL(state.audioVozUrl);
@@ -590,8 +651,13 @@ async function alternarGrabacionEvidencia() {
   }
 
   let stream;
+  const sesionVersion = state.sesionVersion;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (sesionVersion !== state.sesionVersion) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
     const chunks = [];
     const opciones = typeof MediaRecorder.isTypeSupported === 'function' &&
       MediaRecorder.isTypeSupported('audio/webm')
@@ -607,6 +673,7 @@ async function alternarGrabacionEvidencia() {
       if (event.data.size > 0) chunks.push(event.data);
     });
     recorder.addEventListener('stop', () => {
+      if (state.mediaRecorderEvidencia !== recorder) return;
       state.grabandoEvidencia = false;
       state.audioEvidenceBlob = new Blob(chunks, {
         type: recorder.mimeType || 'audio/webm'
@@ -698,6 +765,7 @@ async function procesarEnvioReporte() {
   }
 
   const btn = document.getElementById('btn-enviar-reporte');
+  const sesionVersion = state.sesionVersion;
   state.envioEnCurso = true;
   if (btn) {
     btn.disabled = true;
@@ -727,6 +795,13 @@ async function procesarEnvioReporte() {
     if (!Number.isFinite(state.lat) || !Number.isFinite(state.lng)) {
       throw new Error('Confirma una ubicación válida antes de enviar el reporte.');
     }
+    let consultaDireccion;
+    do {
+      consultaDireccion = state.geocoderPromise;
+      if (consultaDireccion) await consultaDireccion;
+    } while (consultaDireccion !== state.geocoderPromise);
+    if (sesionVersion !== state.sesionVersion) return;
+    const direccionResuelta = state.direccionActual || 'Distrito de Chorrillos, Lima';
 
     const tipo = CATALOGO_TIPOS[state.tipoSeleccionado] ? state.tipoSeleccionado : 'auxilio';
     const infoTipo = CATALOGO_TIPOS[tipo];
@@ -741,7 +816,8 @@ async function procesarEnvioReporte() {
       ubicacion: {
         lat: state.lat,
         lng: state.lng,
-        direccionAprox: 'Distrito de Chorrillos, Lima'
+        direccion: direccionResuelta,
+        direccionAprox: direccionResuelta
       },
       referencia: state.referenciaTexto,
       tiene_audio: !!(state.audioBlob || state.audioEvidenceBlob),
@@ -767,6 +843,7 @@ async function procesarEnvioReporte() {
       .single();
     if (error) throw error;
     if (!data?.ticket) throw new Error('Supabase no devolvió el ticket del nuevo incidente.');
+    if (sesionVersion !== state.sesionVersion) return;
     state.ticketActual = data.ticket;
     state.dniActual = ciudadanoDni;
 
@@ -800,6 +877,7 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
   }
   if (state.consultaSeguimientoEnCurso) return false;
   state.consultaSeguimientoEnCurso = true;
+  const sesionVersion = state.sesionVersion;
 
   try {
     const { data: incidente, error } = await supabaseClient
@@ -817,6 +895,7 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
       return false;
     }
 
+    if (sesionVersion !== state.sesionVersion) return false;
     renderizarEstadoTicket(incidente);
     return true;
   } catch (error) {
@@ -1042,6 +1121,7 @@ async function cargarHistorialCiudadano() {
     return false;
   }
   state.historialCargaEnCurso = true;
+  const sesionVersion = state.sesionVersion;
   state.historialEventosPendientes = [];
   const lista = document.getElementById('ciudadano-historial-lista');
   if (lista && !state.historialIncidentes.length) {
@@ -1064,17 +1144,21 @@ async function cargarHistorialCiudadano() {
       .eq('ciudadano_dni', state.dniActual)
       .order('timestamp', { ascending: false });
     if (error) throw error;
+    if (sesionVersion !== state.sesionVersion) return false;
     state.historialIncidentes = data || [];
     state.historialError = null;
   } catch (error) {
+    if (sesionVersion !== state.sesionVersion) return false;
     console.error('No se pudo cargar el historial del ciudadano:', error);
     state.historialError = error.message || 'No se pudo cargar tu historial.';
     showToast(error.message || 'No se pudo cargar el historial de solicitudes.', 'error');
   } finally {
-    const eventosPendientes = state.historialEventosPendientes.splice(0);
-    eventosPendientes.forEach(payload => aplicarIncidenteHistorialRealtime(payload, true));
+    if (sesionVersion === state.sesionVersion) {
+      const eventosPendientes = state.historialEventosPendientes.splice(0);
+      eventosPendientes.forEach(payload => aplicarIncidenteHistorialRealtime(payload, true));
+      renderizarHistorialCiudadano();
+    }
     state.historialCargaEnCurso = false;
-    renderizarHistorialCiudadano();
   }
   return !state.historialError;
 }
@@ -1216,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resIcon.alt = info.nombre;
       }
       if (resNombre) resNombre.textContent = info.nombre;
-      if (resUbicacion) resUbicacion.textContent = `📍 Coordenadas: ${state.lat.toFixed(4)}, ${state.lng.toFixed(4)}`;
+      if (resUbicacion) mostrarDireccionActual(state.direccionActual || 'Buscando dirección…');
       if (resRef) {
         resRef.textContent = state.referenciaTexto ? `Nota: "${state.referenciaTexto}"` : '';
       }
@@ -1398,6 +1482,10 @@ document.addEventListener('DOMContentLoaded', () => {
       state.tipoSeleccionado = null;
       state.referenciaTexto = '';
       state.notaEvidencia = '';
+      state.geocoderController?.abort();
+      state.geocoderController = null;
+      state.geocoderPromise = null;
+      state.direccionActual = '';
       if (inputNotaEvidencia) inputNotaEvidencia.value = '';
       state.fotoBlob = null;
       fotoBase64 = null;
@@ -1439,6 +1527,64 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  document.getElementById('btn-logout-ciudadano')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      if (!supabaseClient) throw new Error('No se pudo conectar con Supabase.');
+      const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
+      if (error) throw error;
+      state.sesionVersion++;
+      state.geocoderController?.abort();
+      state.geocoderController = null;
+      state.geocoderPromise = null;
+      const canal = state.historialRealtimeChannel;
+      state.historialRealtimeChannel = null;
+      state.historialDniSuscrito = null;
+      state.dniActual = null;
+      state.ticketActual = null;
+      state.ticketSeguimientoActual = null;
+      state.historialIncidentes = [];
+      state.historialEventosPendientes = [];
+      state.historialError = null;
+      state.tipoSeleccionado = null;
+      state.referenciaTexto = '';
+      state.notaEvidencia = '';
+      state.direccionActual = '';
+      state.gpsObtenido = false;
+      state.modoSeleccionManual = false;
+      state.fotoBlob = null;
+      fotoBase64 = null;
+      fotoDataUrlPromise = Promise.resolve(true);
+      if (canal) {
+        void supabaseClient.removeChannel(canal).then(resultado => {
+          if (resultado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del ciudadano:', resultado);
+        }).catch(error => console.error('Error al cerrar el canal Realtime del ciudadano:', error));
+      }
+      borrarGrabacionVoz();
+      borrarGrabacionEvidencia();
+      ['ciudadano-dni', 'ciudadano-pin', 'ref-texto', 'evidencia-texto', 'evidencia-foto', 'input-ticket'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+      const foto = document.getElementById('preview-foto');
+      if (foto) { foto.removeAttribute('src'); foto.classList.add('d-none'); }
+      const etiquetaFoto = document.getElementById('foto-label-text');
+      if (etiquetaFoto) etiquetaFoto.textContent = 'Tomar o adjuntar foto';
+      renderizarHistorialCiudadano();
+      renderizarEstadoTicket({ estado: '', unidad: null, unidad_codigo: null });
+      ['btn-ir-seguimiento', 'btn-logout-ciudadano', 'btn-mis-reportes'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+      mostrarPantalla('screen-login-ciudadano');
+      showToast('Sesión cerrada correctamente', 'success');
+    } catch (error) {
+      console.error('No se pudo cerrar la sesión ciudadana:', error);
+      showToast(error.message || 'No se pudo cerrar la sesión.', 'error');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   // 10. Detección de parámetro URL desde Landing Page (ej: ?tipo=violencia)
   const urlParams = new URLSearchParams(window.location.search);
   const tipoQuery = urlParams.get('tipo');
@@ -1456,9 +1602,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const user = data.session?.user;
       if (user?.app_metadata?.role === 'ciudadano') {
         state.dniActual = user.app_metadata.dni;
+        state.sesionVersion++;
         suscribirHistorialRealtime();
         mostrarPantalla('screen-home');
         document.getElementById('btn-ir-seguimiento')?.classList.remove('hidden');
+        document.getElementById('btn-logout-ciudadano')?.classList.remove('hidden');
         document.getElementById('btn-mis-reportes')?.classList.remove('hidden');
       }
     }).catch(error => console.error('No se pudo restaurar la sesión ciudadana:', error));

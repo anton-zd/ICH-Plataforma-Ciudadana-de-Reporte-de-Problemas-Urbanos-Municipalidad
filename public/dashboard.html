@@ -476,6 +476,14 @@
                   <i class="bi bi-file-earmark-excel-fill" aria-hidden="true"></i> Descargar Excel
                 </button>
               </div>
+              <div class="row g-2 align-items-end p-3">
+                <div class="col-12 col-md-4"><label class="form-label small fw-bold" for="historial-filtro-buscar">Ticket</label><input type="search" class="form-control" id="historial-filtro-buscar" placeholder="Buscar por ticket (ej. INC-2026-...)"></div>
+                <div class="col-6 col-md-2"><label class="form-label small fw-bold" for="historial-filtro-tipo">Tipo</label><select class="form-select" id="historial-filtro-tipo"><option value="">Todos</option><option value="violencia">Violencia</option><option value="robo">Robo</option><option value="accidente">Accidente</option><option value="auxilio">Auxilio</option><option value="otros">Otros</option></select></div>
+                <div class="col-6 col-md-2"><label class="form-label small fw-bold" for="historial-filtro-estado">Estado</label><select class="form-select" id="historial-filtro-estado"><option value="">Todos</option><option value="atendido">Atendido</option><option value="cancelado">Cancelado</option></select></div>
+                <div class="col-6 col-md-2"><label class="form-label small fw-bold" for="historial-filtro-patrulla">Patrulla</label><select class="form-select" id="historial-filtro-patrulla"><option value="">Todas las patrullas</option></select></div>
+                <div class="col-6 col-md-2"><button type="button" class="btn btn-outline-secondary w-100" id="btn-limpiar-filtros-historial">Limpiar</button></div>
+                <div class="col-12 small text-muted" id="historial-contador" role="status" aria-live="polite"></div>
+              </div>
               <div class="table-responsive p-3">
                 <table class="table table-hover align-middle">
                   <thead class="table-light">
@@ -486,10 +494,11 @@
                       <th>Unidad Asignada</th>
                       <th>Fecha de Cierre</th>
                       <th>Observaciones de Campo</th>
+                      <th>Detalles</th>
                     </tr>
                   </thead>
                   <tbody id="historial-tbody">
-                    <tr><td colspan="6" class="text-center py-4 text-muted">Cargando historial…</td></tr>
+                    <tr><td colspan="7" class="text-center py-4 text-muted">Cargando historial…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -651,6 +660,7 @@
             <span class="badge-status badge-alta" id="modal-inc-prioridad">ALTA</span>
           </div>
           <small class="text-muted" id="modal-inc-ticket">—</small>
+          <div class="small mt-1" id="modal-inc-ubicacion"></div>
         </div>
 
         <div id="modal-evidencia-container" class="mb-3 hidden p-3 bg-white border rounded-3">
@@ -675,6 +685,24 @@
           <i class="bi bi-send-fill me-1"></i> Despachar Unidad
         </button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="modal-detalle-historial" role="dialog" aria-modal="true" aria-labelledby="modal-detalle-historial-title">
+    <div class="modal-custom">
+      <div class="p-4 border-bottom d-flex align-items-center justify-content-between">
+        <h3 class="h5 mb-0 fw-bold text-dark" id="modal-detalle-historial-title">Detalle del incidente</h3>
+        <button type="button" class="btn btn-outline-secondary" id="btn-cerrar-detalle-historial" aria-label="Cerrar detalle">Cerrar</button>
+      </div>
+      <div class="p-4">
+        <dl id="detalle-historial-datos" class="mb-3"></dl>
+        <h4 class="h6 fw-bold">Evidencias multimedia</h4>
+        <p id="detalle-historial-carga" role="status" class="small text-muted"></p>
+        <div id="detalle-historial-foto-container" class="mb-3 hidden"><div class="fw-semibold">Fotografía</div><img id="detalle-historial-foto" class="img-fluid rounded border" alt="Fotografía del incidente" style="max-height: 220px;"></div>
+        <div id="detalle-historial-referencia-container" class="mb-3 hidden"><div class="fw-semibold">Audio de referencia</div><audio id="detalle-historial-audio-referencia" controls class="w-100"></audio></div>
+        <div id="detalle-historial-audio-container" class="mb-3 hidden"><div class="fw-semibold">Audio de evidencia</div><audio id="detalle-historial-audio-evidencia" controls class="w-100"></audio></div>
+      </div>
+      <div class="p-3 bg-light border-top d-flex justify-content-end"><button type="button" class="btn btn-light px-4" id="btn-cerrar-detalle-historial-pie" style="min-height: 48px;">Cerrar</button></div>
     </div>
   </div>
 
