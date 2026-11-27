@@ -866,7 +866,7 @@ async function procesarEnvioReporte() {
 
 // ─── Seguimiento en Tiempo Real (RF-04, RF-05) ───────────────────────────────
 
-const COLUMNAS_HISTORIAL_CIUDADANO = 'ticket, tipo, prioridad, estado, referencia, nota_evidencia, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, atendido_at';
+const COLUMNAS_HISTORIAL_CIUDADANO = 'ticket, tipo, prioridad, estado, referencia, nota_evidencia, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, atendido_at, confirmacion_ciudadano, confirmacion_comentario, confirmacion_at';
 const CAMPOS_HISTORIAL_CIUDADANO = COLUMNAS_HISTORIAL_CIUDADANO.split(',').map(columna => columna.trim());
 
 async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false) {
@@ -882,7 +882,7 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
   try {
     const { data: incidente, error } = await supabaseClient
       .from('incidentes')
-      .select('ticket,estado,unidad,unidad_codigo,eta_minutos')
+      .select('ticket,estado,unidad,unidad_codigo,eta_minutos,confirmacion_ciudadano,confirmacion_comentario,confirmacion_at')
       .eq('ticket', codigoTicket.trim().toUpperCase())
       .single();
     if (error) {
@@ -909,7 +909,33 @@ async function consultarEstadoTicket(codigoTicket, notificarNoEncontrado = false
   }
 }
 
+function renderizarConfirmacionCiudadano(incidente) {
+  const panel = document.getElementById('panel-confirmacion-ciudadano');
+  const pendiente = document.getElementById('confirmacion-ciudadano-pendiente');
+  const respuesta = document.getElementById('confirmacion-ciudadano-respuesta');
+  if (!panel) return;
+  if (incidente.estado !== 'atendido') {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+  const confirmacion = incidente.confirmacion_ciudadano || 'pendiente';
+  if (confirmacion === 'pendiente') {
+    pendiente?.classList.remove('hidden');
+    respuesta?.classList.add('hidden');
+  } else {
+    pendiente?.classList.add('hidden');
+    respuesta?.classList.remove('hidden');
+    const fecha = incidente.confirmacion_at ? new Date(incidente.confirmacion_at).toLocaleString('es-PE') : '';
+    const texto = confirmacion === 'confirmado'
+      ? `✅ Confirmado por ciudadano${fecha ? ` · ${fecha}` : ''}`
+      : `⚠️ Ciudadano reporta NO atendido${fecha ? ` · ${fecha}` : ''}`;
+    respuesta.textContent = `${texto}${incidente.confirmacion_comentario ? `\nComentario: ${incidente.confirmacion_comentario}` : ''}`;
+  }
+}
+
 function renderizarEstadoTicket(incidente) {
+  renderizarConfirmacionCiudadano(incidente);
   const badgeEstado = document.getElementById('badge-estado');
   if (badgeEstado) {
     badgeEstado.className = `badge-status badge-${incidente.estado}`;
@@ -951,6 +977,47 @@ function activarMonitoreoSeguimiento(ticket) {
   state.ticketSeguimientoActual = ticketNormalizado;
   if (state.dniActual) suscribirHistorialRealtime();
   void consultarEstadoTicket(ticketNormalizado, true);
+}
+
+async function confirmarAtencionCiudadana(confirmacion) {
+  const ticket = state.ticketSeguimientoActual || state.ticketActual;
+  if (!ticket || !supabaseClient) {
+    showToast('No hay un ticket válido para confirmar.', 'error');
+    return;
+  }
+  const comentario = document.getElementById('confirmacion-comentario-input')?.value.trim() || '';
+  const fecha = new Date().toISOString();
+  const [si, no] = [
+    document.getElementById('btn-confirmar-atencion-si'),
+    document.getElementById('btn-confirmar-atencion-no')
+  ];
+  si?.setAttribute('disabled', 'disabled');
+  no?.setAttribute('disabled', 'disabled');
+  try {
+    const { error } = await supabaseClient
+      .from('incidentes')
+      .update({
+        confirmacion_ciudadano: confirmacion,
+        confirmacion_comentario: comentario,
+        confirmacion_at: fecha,
+        updated_at: fecha
+      })
+      .eq('ticket', ticket);
+    if (error) throw error;
+    await consultarEstadoTicket(ticket, true);
+    await cargarHistorialCiudadano();
+    const mensaje = confirmacion === 'confirmado'
+      ? 'Confirmación registrada: atención recibida.'
+      : 'Se registró que no recibió atención.';
+    showToast(mensaje, confirmacion === 'confirmado' ? 'success' : 'error');
+    hablarTexto(mensaje);
+  } catch (error) {
+    console.error('No se pudo guardar la confirmación ciudadana:', error);
+    showToast(error.message || 'No se pudo guardar la confirmación.', 'error');
+  } finally {
+    si?.removeAttribute('disabled');
+    no?.removeAttribute('disabled');
+  }
 }
 
 function actualizarEstadoHistorialRealtime(texto, activo) {
@@ -1043,6 +1110,12 @@ function renderizarHistorialCiudadano() {
       observaciones.className = 'ciudadano-historial-observaciones';
       observaciones.textContent = `Observaciones de cierre: ${incidente.observaciones}`;
       tarjeta.appendChild(observaciones);
+    }
+    if (incidente.estado === 'atendido' && (!incidente.confirmacion_ciudadano || incidente.confirmacion_ciudadano === 'pendiente')) {
+      const pendiente = document.createElement('span');
+      pendiente.className = 'badge bg-secondary text-white mt-1';
+      pendiente.textContent = 'Sin confirmar · toca para confirmar';
+      tarjeta.appendChild(pendiente);
     }
     itemLista.appendChild(tarjeta);
     lista.appendChild(itemLista);
@@ -1166,6 +1239,8 @@ async function cargarHistorialCiudadano() {
 // ─── Inicialización de Eventos del DOM ───────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-confirmar-atencion-si')?.addEventListener('click', () => confirmarAtencionCiudadana('confirmado'));
+  document.getElementById('btn-confirmar-atencion-no')?.addEventListener('click', () => confirmarAtencionCiudadana('no_atendido'));
 
   const dniInput = document.getElementById('ciudadano-dni');
   const pinInput = document.getElementById('ciudadano-pin');

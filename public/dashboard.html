@@ -247,9 +247,8 @@
     <div class="accessibility-panel" role="group" aria-label="Preferencias de accesibilidad">
       <h2>Accesibilidad</h2>
       <div class="accessibility-font-controls" role="group" aria-label="Tamaño del texto">
-        <button type="button" data-font-size="normal" aria-pressed="true">A- <span>Normal 100%</span></button>
-        <button type="button" data-font-size="large" aria-pressed="false">A+ <span>Grande 115%</span></button>
-        <button type="button" data-font-size="extra-large" aria-pressed="false">A++ <span>Extra grande 130%</span></button>
+        <div class="accessibility-font-label" id="accessibility-font-label">Tamaño de texto: Normal (100%)</div>
+        <div class="accessibility-range-row"><span aria-hidden="true">A</span><input type="range" min="1" max="5" step="1" value="2" id="accessibility-font-range" aria-labelledby="accessibility-font-label"><span class="accessibility-a-large" aria-hidden="true">A</span></div>
       </div>
       <button type="button" data-accessibility-toggle="highContrast" aria-pressed="false">Alto Contraste</button>
       <button type="button" data-accessibility-toggle="voiceGuide" aria-pressed="false">Lectura por Voz (Guía Auditiva)</button>
@@ -360,6 +359,10 @@
             <i class="bi bi-geo-alt-fill text-primary"></i>
             <span>Mapa Táctico</span>
           </button>
+          <button class="nav-item-dashboard" data-view="mapa-calor">
+            <i class="bi bi-fire"></i>
+            <span>Mapa de Calor</span>
+          </button>
 
           <button class="nav-item-dashboard" data-view="unidades">
             <i class="bi bi-car-front-fill text-success"></i>
@@ -443,6 +446,31 @@
             </div>
           </section>
 
+          <section class="view hidden" id="view-mapa-calor">
+            <div class="card-modern">
+              <div class="card-modern-header flex-wrap gap-3">
+                <h2 class="h5 mb-0 fw-bold text-dark">🔥 Mapa de Calor de Incidentes</h2>
+                <div class="d-flex flex-wrap gap-2 ms-auto">
+                  <div><label class="form-label small fw-bold mb-1" for="heatmap-filtro-tipo">Tipo</label><select id="heatmap-filtro-tipo" class="form-select form-select-sm"><option value="">Todos</option><option value="violencia">Violencia</option><option value="robo">Robo</option><option value="accidente">Accidente</option><option value="auxilio">Auxilio</option><option value="otros">Otros</option></select></div>
+                  <div><label class="form-label small fw-bold mb-1" for="heatmap-fecha-inicio">Desde</label><input type="date" id="heatmap-fecha-inicio" class="form-control form-control-sm"></div>
+                  <div><label class="form-label small fw-bold mb-1" for="heatmap-fecha-fin">Hasta</label><input type="date" id="heatmap-fecha-fin" class="form-control form-control-sm"></div>
+                </div>
+              </div>
+              <div class="row g-3 p-3">
+                <div class="col-12 col-xl-8">
+                  <div id="mapa-calor-dashboard" style="height:520px; min-height:520px; border-radius:12px;"></div>
+                  <div class="d-flex align-items-center gap-2 small mt-2"><strong>Intensidad</strong><span>Baja</span><span class="flex-grow-1" style="height:10px;background:linear-gradient(90deg,#facc15,#f97316,#dc2626,#991b1b);border-radius:8px;"></span><span>Crítica</span></div>
+                </div>
+                <div class="col-12 col-xl-4">
+                  <div class="card-modern h-100">
+                    <div class="card-modern-header"><h3 class="h6 mb-0 fw-bold">Zonas más afectadas</h3></div>
+                    <div class="p-3" id="heatmap-ranking-zonas"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <!-- VISTA: MAPA TÁCTICO -->
           <section class="view hidden" id="view-mapa">
             <div class="card-modern">
@@ -494,11 +522,12 @@
                       <th>Unidad Asignada</th>
                       <th>Fecha de Cierre</th>
                       <th>Observaciones de Campo</th>
+                      <th>Confirmación</th>
                       <th>Detalles</th>
                     </tr>
                   </thead>
                   <tbody id="historial-tbody">
-                    <tr><td colspan="7" class="text-center py-4 text-muted">Cargando historial…</td></tr>
+                    <tr><td colspan="8" class="text-center py-4 text-muted">Cargando historial…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -743,6 +772,7 @@
   <!-- Leaflet & JS -->
   <script src="/js/shared-accessibility.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

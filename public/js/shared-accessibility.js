@@ -2,18 +2,25 @@
 
 (() => {
   const storageKey = 'serenazgo-accessibility-preferences';
-  const fontSizes = ['normal', 'large', 'extra-large'];
-  const defaults = { fontSize: 'normal', highContrast: false, voiceGuide: false };
+  const fontLevels = [
+    { level: 1, percent: 90, name: 'Compacto' },
+    { level: 2, percent: 100, name: 'Normal' },
+    { level: 3, percent: 115, name: 'Mediano' },
+    { level: 4, percent: 130, name: 'Grande' },
+    { level: 5, percent: 145, name: 'Extra grande' }
+  ];
+  const defaults = { fontLevel: 2, highContrast: false, voiceGuide: false };
   const voiceSupported = 'speechSynthesis' in window &&
     typeof window.SpeechSynthesisUtterance === 'function';
   let preferences = { ...defaults };
-  let lastSpokenText = '';
-  let lastSpokenAt = 0;
+  let readingHighlight = null;
 
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
     preferences = {
-      fontSize: fontSizes.includes(saved.fontSize) ? saved.fontSize : defaults.fontSize,
+      fontLevel: Number.isInteger(saved.fontLevel) && saved.fontLevel >= 1 && saved.fontLevel <= 5
+        ? saved.fontLevel
+        : (saved.fontSize === 'extra-large' ? 4 : saved.fontSize === 'large' ? 3 : 2),
       highContrast: saved.highContrast === true,
       voiceGuide: saved.voiceGuide === true && voiceSupported
     };
@@ -31,10 +38,19 @@
 
   function renderPreferences() {
     const root = document.documentElement;
-    root.dataset.accessibilityFontSize = preferences.fontSize;
+    const selected = fontLevels.find(item => item.level === preferences.fontLevel) || fontLevels[1];
+    root.dataset.accessibilityFontLevel = String(selected.level);
+    root.dataset.accessibilityFontSize = selected.level === 2 ? 'normal' : selected.level === 3 ? 'large' : 'extra-large';
+    root.style.setProperty('--accessibility-font-scale', String(selected.percent / 100));
+    root.style.fontSize = `${selected.percent}%`;
     root.classList.toggle('high-contrast', preferences.highContrast);
-    document.querySelectorAll('[data-font-size]').forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.fontSize === preferences.fontSize));
+    document.querySelectorAll('#accessibility-font-range').forEach(range => {
+      range.value = String(selected.level);
+      range.style.setProperty('--range-progress', `${((selected.level - 1) / 4) * 100}%`);
+      range.setAttribute('aria-valuetext', `${selected.name} ${selected.percent}%`);
+    });
+    document.querySelectorAll('#accessibility-font-label').forEach(label => {
+      label.textContent = `Tamaño de texto: ${selected.name} (${selected.percent}%)`;
     });
     document.querySelectorAll('[data-accessibility-toggle]').forEach(button => {
       const key = button.dataset.accessibilityToggle;
@@ -48,21 +64,51 @@
   function hablar(texto) {
     const contenido = String(texto || '').replace(/\s+/g, ' ').trim().slice(0, 260);
     if (!preferences.voiceGuide || !contenido || !voiceSupported) return;
-    const ahora = Date.now();
-    if (contenido === lastSpokenText && ahora - lastSpokenAt < 800) return;
-    lastSpokenText = contenido;
-    lastSpokenAt = ahora;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(contenido);
     utterance.lang = 'es-PE';
+    utterance.rate = 0.95;
+    const voces = window.speechSynthesis.getVoices();
+    const voz = voces.find(v => v.lang?.toLowerCase().startsWith('es-pe')) ||
+      voces.find(v => v.lang?.toLowerCase().includes('es-419')) ||
+      voces.find(v => v.lang?.toLowerCase().startsWith('es-mx')) ||
+      voces.find(v => v.lang?.toLowerCase().startsWith('es-es')) ||
+      voces.find(v => v.lang?.toLowerCase().startsWith('es'));
+    if (voz) utterance.voice = voz;
     window.speechSynthesis.speak(utterance);
+  }
+
+  function extraerTextoRelevante(target) {
+    if (!target || target === document.body || target === document.documentElement) return '';
+    const aria = target.getAttribute?.('aria-label');
+    if (aria) return aria.trim();
+    if (target.labels?.length) return target.labels[0].textContent.replace(/\s+/g, ' ').trim();
+    if (target.matches('input, select, textarea')) {
+      return target.value || target.placeholder || target.name || '';
+    }
+    return (target.innerText || target.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function leerElemento(target) {
+    if (!target || target.closest('.accessibility-widget')) return;
+    const texto = extraerTextoRelevante(target);
+    if (!texto) return;
+    if (readingHighlight) readingHighlight.classList.remove('tts-reading-highlight');
+    readingHighlight = target;
+    target.classList.add('tts-reading-highlight');
+    globalThis.clearTimeout(target.__ttsHighlightTimer);
+    target.__ttsHighlightTimer = globalThis.setTimeout(() => {
+      target.classList.remove('tts-reading-highlight');
+      if (readingHighlight === target) readingHighlight = null;
+    }, 1400);
+    hablar(texto);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     renderPreferences();
-    document.querySelectorAll('[data-font-size]').forEach(button => {
-      button.addEventListener('click', () => {
-        preferences.fontSize = button.dataset.fontSize;
+    document.querySelectorAll('#accessibility-font-range').forEach(range => {
+      range.addEventListener('input', () => {
+        preferences.fontLevel = Math.max(1, Math.min(5, Number(range.value)));
         renderPreferences();
         persistPreferences();
       });
@@ -74,8 +120,14 @@
         preferences[key] = !preferences[key];
         renderPreferences();
         persistPreferences();
-        if (key === 'voiceGuide' && !preferences.voiceGuide && voiceSupported) {
+        if (key === 'voiceGuide' && preferences.voiceGuide && voiceSupported) {
+          hablar('Lectura por voz activada. Toca o selecciona cualquier texto o botón para escucharlo.');
+        } else if (key === 'voiceGuide' && voiceSupported) {
           window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance('Lectura por voz desactivada.');
+          utterance.lang = 'es-PE';
+          utterance.rate = 0.95;
+          window.speechSynthesis.speak(utterance);
         }
       });
     });
@@ -83,7 +135,7 @@
     const probarAccesibilidad = document.getElementById('btn-probar-accesibilidad');
     probarAccesibilidad?.addEventListener('click', event => {
       event.stopPropagation();
-      preferences.fontSize = 'extra-large';
+      preferences.fontLevel = 4;
       preferences.highContrast = true;
       preferences.voiceGuide = voiceSupported;
       renderPreferences();
@@ -103,10 +155,9 @@
     });
 
     document.addEventListener('click', event => {
-      const target = event.target.closest('button, a, [role="button"], h1, h2, h3, h4, h5, h6');
-      if (target && !target.closest('.accessibility-widget')) {
-        hablar(target.getAttribute('aria-label') || target.textContent);
-      }
+      const selector = 'button,a,h1,h2,h3,h4,h5,h6,p,label,span,li,td,th,input,select,textarea,[role="button"],.incident-card,.tipo-card,.card-modern';
+      const target = event.target.closest(selector);
+      leerElemento(target);
     });
     document.addEventListener('focusin', event => {
       const target = event.target.closest('button, a, [role="button"], input, select, textarea');
@@ -116,6 +167,15 @@
           target.textContent || target.getAttribute('placeholder') || target.value;
         hablar(label);
       }
+    });
+
+    document.addEventListener('mouseup', () => {
+      const seleccion = window.getSelection()?.toString().replace(/\s+/g, ' ').trim();
+      if (seleccion) hablar(seleccion);
+    });
+    document.addEventListener('touchend', () => {
+      const seleccion = window.getSelection()?.toString().replace(/\s+/g, ' ').trim();
+      if (seleccion) hablar(seleccion);
     });
 
     const observer = new MutationObserver(records => {

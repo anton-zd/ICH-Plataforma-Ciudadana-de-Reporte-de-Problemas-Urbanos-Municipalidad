@@ -42,10 +42,51 @@ CREATE TABLE IF NOT EXISTS public.incidentes (
   timestamp timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   atendido_at timestamptz
+  ,confirmacion_ciudadano text NOT NULL DEFAULT 'pendiente'
+    CHECK (confirmacion_ciudadano IN ('pendiente', 'confirmado', 'no_atendido')),
+  confirmacion_comentario text NOT NULL DEFAULT '',
+  confirmacion_at timestamptz
 );
 
 ALTER TABLE public.incidentes
   ADD COLUMN IF NOT EXISTS nota_evidencia text NOT NULL DEFAULT '';
+ALTER TABLE public.incidentes
+  ADD COLUMN IF NOT EXISTS confirmacion_ciudadano text NOT NULL DEFAULT 'pendiente';
+ALTER TABLE public.incidentes
+  ADD COLUMN IF NOT EXISTS confirmacion_comentario text NOT NULL DEFAULT '';
+ALTER TABLE public.incidentes
+  ADD COLUMN IF NOT EXISTS confirmacion_at timestamptz;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'incidentes_confirmacion_ciudadano_check'
+      AND conrelid = 'public.incidentes'::regclass
+  ) THEN
+    ALTER TABLE public.incidentes
+      ADD CONSTRAINT incidentes_confirmacion_ciudadano_check
+      CHECK (confirmacion_ciudadano IN ('pendiente', 'confirmado', 'no_atendido'));
+  END IF;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.unidades_operativas (
+  codigo text PRIMARY KEY CHECK (codigo ~ '^SR-[0-9]{2}$'),
+  nombre text NOT NULL,
+  sector text NOT NULL DEFAULT '',
+  estado_operativo text NOT NULL DEFAULT 'disponible'
+    CHECK (estado_operativo IN ('disponible', 'en_intervencion', 'no_disponible')),
+  motivo_estado text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.unidades_operativas (codigo, nombre, sector)
+VALUES
+  ('SR-01', 'Patrulla Terán - Centro', 'Chorrillos Casco'),
+  ('SR-02', 'Motorizado Huaylas Express', 'Av. Huaylas'),
+  ('SR-03', 'Patrulla Villa y Pantanos', 'Los Pantanos'),
+  ('SR-04', 'Motorizado Cedros del Villa', 'Los Cedros')
+ON CONFLICT (codigo) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.ciudadano_auth_rate_limits (
   key_hash text PRIMARY KEY,
@@ -73,6 +114,16 @@ BEGIN
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.incidentes;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'unidades_operativas'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.unidades_operativas;
+  END IF;
 END;
 $$;
 
@@ -94,7 +145,8 @@ GRANT INSERT (
 ) ON public.incidentes TO authenticated;
 GRANT UPDATE (
   estado, unidad_asignada, unidad, unidad_codigo, eta_minutos,
-  observaciones, atendido_at, updated_at
+  observaciones, atendido_at, updated_at,
+  confirmacion_ciudadano, confirmacion_comentario, confirmacion_at
 ) ON public.incidentes TO authenticated;
 
 DROP POLICY IF EXISTS "citizens can read their own reports" ON public.incidentes;
@@ -175,6 +227,76 @@ $$;
 CREATE OR REPLACE TRIGGER incidentes_proteger_edicion_sereno
   BEFORE UPDATE ON public.incidentes
   FOR EACH ROW EXECUTE FUNCTION public.proteger_edicion_incidente_sereno();
+
+DROP POLICY IF EXISTS "citizens can confirm their attended reports" ON public.incidentes;
+CREATE POLICY "citizens can confirm their attended reports"
+  ON public.incidentes FOR UPDATE TO authenticated
+  USING (
+    ciudadano_dni = (auth.jwt() -> 'app_metadata' ->> 'dni')
+    AND (auth.jwt() -> 'app_metadata' ->> 'role') = 'ciudadano'
+    AND estado = 'atendido'
+  )
+  WITH CHECK (
+    ciudadano_dni = (auth.jwt() -> 'app_metadata' ->> 'dni')
+    AND (auth.jwt() -> 'app_metadata' ->> 'role') = 'ciudadano'
+    AND estado = 'atendido'
+    AND confirmacion_ciudadano IN ('confirmado', 'no_atendido')
+  );
+
+CREATE OR REPLACE FUNCTION public.proteger_edicion_incidente_ciudadano()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF (auth.jwt() -> 'app_metadata' ->> 'role') = 'ciudadano'
+    AND (to_jsonb(NEW) - ARRAY[
+      'confirmacion_ciudadano', 'confirmacion_comentario', 'confirmacion_at', 'updated_at'
+    ]) IS DISTINCT FROM
+        (to_jsonb(OLD) - ARRAY[
+          'confirmacion_ciudadano', 'confirmacion_comentario', 'confirmacion_at', 'updated_at'
+        ])
+  THEN
+    RAISE EXCEPTION 'El ciudadano solo puede confirmar o rechazar la atención recibida.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS proteger_edicion_incidente_ciudadano ON public.incidentes;
+CREATE TRIGGER proteger_edicion_incidente_ciudadano
+  BEFORE UPDATE ON public.incidentes
+  FOR EACH ROW EXECUTE FUNCTION public.proteger_edicion_incidente_ciudadano();
+
+ALTER TABLE public.unidades_operativas ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.unidades_operativas FROM PUBLIC, anon;
+GRANT SELECT ON public.unidades_operativas TO authenticated;
+GRANT UPDATE (estado_operativo, motivo_estado, updated_at) ON public.unidades_operativas TO authenticated;
+
+DROP POLICY IF EXISTS "operators can read operational units" ON public.unidades_operativas;
+CREATE POLICY "operators can read operational units"
+  ON public.unidades_operativas FOR SELECT TO authenticated
+  USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'operador');
+
+DROP POLICY IF EXISTS "serenos can read operational units" ON public.unidades_operativas;
+CREATE POLICY "serenos can read operational units"
+  ON public.unidades_operativas FOR SELECT TO authenticated
+  USING (
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'sereno'
+    AND codigo = (auth.jwt() -> 'app_metadata' ->> 'unit_code')
+  );
+
+DROP POLICY IF EXISTS "serenos can update their operational state" ON public.unidades_operativas;
+CREATE POLICY "serenos can update their operational state"
+  ON public.unidades_operativas FOR UPDATE TO authenticated
+  USING (
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'sereno'
+    AND codigo = (auth.jwt() -> 'app_metadata' ->> 'unit_code')
+  )
+  WITH CHECK (
+    (auth.jwt() -> 'app_metadata' ->> 'role') = 'sereno'
+    AND codigo = (auth.jwt() -> 'app_metadata' ->> 'unit_code')
+  );
 
 REVOKE ALL ON public.ciudadano_auth_rate_limits FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.ciudadano_auth_rate_limits TO service_role;

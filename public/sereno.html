@@ -180,9 +180,8 @@
     <div class="accessibility-panel" role="group" aria-label="Preferencias de accesibilidad">
       <h2>Accesibilidad</h2>
       <div class="accessibility-font-controls" role="group" aria-label="Tamaño del texto">
-        <button type="button" data-font-size="normal" aria-pressed="true">A- <span>Normal 100%</span></button>
-        <button type="button" data-font-size="large" aria-pressed="false">A+ <span>Grande 115%</span></button>
-        <button type="button" data-font-size="extra-large" aria-pressed="false">A++ <span>Extra grande 130%</span></button>
+        <div class="accessibility-font-label" id="accessibility-font-label">Tamaño de texto: Normal (100%)</div>
+        <div class="accessibility-range-row"><span aria-hidden="true">A</span><input type="range" min="1" max="5" step="1" value="2" id="accessibility-font-range" aria-labelledby="accessibility-font-label"><span class="accessibility-a-large" aria-hidden="true">A</span></div>
       </div>
       <button type="button" data-accessibility-toggle="highContrast" aria-pressed="false">Alto Contraste</button>
       <button type="button" data-accessibility-toggle="voiceGuide" aria-pressed="false">Lectura por Voz (Guía Auditiva)</button>
@@ -376,12 +375,15 @@
         <small class="text-muted" id="perfil-rol">Agente de Serenazgo</small>
 
         <div class="mt-3 pt-3 border-top text-start">
-          <label for="select-estado-sereno" class="form-label fw-bold small text-muted">Cambiar Estado Operativo</label>
-          <select id="select-estado-sereno" class="form-select py-2">
+          <label for="sereno-estado-select" class="form-label fw-bold small text-muted">Cambiar Estado Operativo</label>
+          <select id="sereno-estado-select" class="form-select py-2">
             <option value="disponible">🟢 Disponible para despacho</option>
-            <option value="en_servicio">🟡 En intervención activa</option>
-            <option value="fuera_servicio">🔴 Fuera de turno / Pausa</option>
+            <option value="en_intervencion">🟠 En intervención (campo / auxilio)</option>
+            <option value="no_disponible">🔴 No disponible / Fuera de servicio</option>
           </select>
+          <small id="sereno-estado-nota" class="text-muted d-block mt-2"></small>
+          <input type="text" id="sereno-motivo-estado" class="form-control mt-2" maxlength="120" placeholder="Motivo opcional (ej. Auxilio a peatón en vía pública)">
+          <button type="button" id="btn-actualizar-estado-sereno" class="btn btn-primary w-100 mt-3 fw-bold"><i class="bi bi-arrow-repeat me-1"></i> Actualizar estado</button>
         </div>
       </div>
 

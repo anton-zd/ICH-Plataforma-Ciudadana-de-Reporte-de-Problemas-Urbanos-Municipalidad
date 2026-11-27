@@ -15,7 +15,7 @@ const supabaseClient = window.supabase
   })
   : null;
 
-const COLUMNAS_LIGERAS_INCIDENTES = 'id, ticket, ciudadano_dni, tipo, prioridad, ubicacion, referencia, nota_evidencia, tiene_audio, tiene_audio_evidencia, tiene_foto, estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, updated_at, atendido_at';
+const COLUMNAS_LIGERAS_INCIDENTES = 'id, ticket, ciudadano_dni, tipo, prioridad, ubicacion, referencia, nota_evidencia, tiene_audio, tiene_audio_evidencia, tiene_foto, estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, updated_at, atendido_at, confirmacion_ciudadano, confirmacion_comentario, confirmacion_at';
 const CAMPOS_LIGEROS_INCIDENTES = COLUMNAS_LIGERAS_INCIDENTES.split(',').map(columna => columna.trim());
 
 // ─── Estado Local del Operador ───────────────────────────────────────────────
@@ -34,6 +34,10 @@ const dashboardState = {
   pendingStatsRefresh: false,
   evidenciasPorTicket: new Map(),
   casesSignature: null,
+  unidadesOperativas: new Map(),
+  unidadesRealtimeChannel: null,
+  mapaCalor: null,
+  heatLayer: null,
   focoAnteriorDetalle: null,
 };
 
@@ -106,10 +110,16 @@ function renderizarVistasActivas() {
   if (document.getElementById('view-rendimiento')?.classList.contains('active')) {
     renderizarRendimiento();
   }
+  if (document.getElementById('view-mapa-calor')?.classList.contains('active')) {
+    inicializarMapaCalor();
+  }
 }
 
 function aplicarCambioIncidenteRealtime(payload) {
   const registro = payload.new || {};
+  if (payload.eventType === 'UPDATE' && registro.confirmacion_ciudadano === 'no_atendido') {
+    notify(`⚠️ El ciudadano reporta NO atendido en ${registro.ticket || 'el incidente'}.`, 'error');
+  }
   const ticket = registro.ticket || payload.old?.ticket;
   const id = registro.id || payload.old?.id;
   const existente = dashboardState.casos.findIndex(caso =>
@@ -170,6 +180,39 @@ function suscribirNuevosIncidentes() {
     });
 }
 
+async function cargarUnidadesOperativas() {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient
+    .from('unidades_operativas')
+    .select('codigo,nombre,sector,estado_operativo,motivo_estado,updated_at')
+    .order('codigo');
+  if (error) throw error;
+  dashboardState.unidadesOperativas = new Map((data || []).map(unidad => [unidad.codigo, unidad]));
+  renderizarUnidadesGrid();
+  actualizarMetricas(obtenerCasos());
+}
+
+function suscribirUnidadesOperativas() {
+  if (!supabaseClient || !dashboardState.usuarioActual) return;
+  if (dashboardState.unidadesRealtimeChannel) return;
+  dashboardState.unidadesRealtimeChannel = supabaseClient
+    .channel('operador-unidades-operativas-realtime')
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'unidades_operativas'
+    }, payload => {
+      if (payload.new?.codigo) dashboardState.unidadesOperativas.set(payload.new.codigo, payload.new);
+      renderizarUnidadesGrid();
+      actualizarMetricas(obtenerCasos());
+      if (dashboardState.unidadSeleccionadaId) {
+        const unidad = dashboardState.unidadesOperativas.get(dashboardState.unidadSeleccionadaId);
+        if (unidad?.estado_operativo !== 'disponible') document.getElementById('btn-confirmar-asignacion')?.setAttribute('disabled', 'disabled');
+      }
+    })
+    .subscribe();
+}
+
 async function cargarIncidentes() {
   try {
     if (!supabaseClient) {
@@ -212,6 +255,9 @@ async function actualizarDatosDashboard({ actualizarEstadisticas = false } = {})
         document.getElementById('view-estadisticas')?.classList.contains('active')) {
       renderizarEstadisticas();
     }
+    if (document.getElementById('view-mapa-calor')?.classList.contains('active')) {
+      inicializarMapaCalor();
+    }
     if (dataChanged && document.getElementById('view-rendimiento')?.classList.contains('active')) {
       renderizarRendimiento();
     }
@@ -250,6 +296,8 @@ async function activarSesionOperador(user) {
   if (userLabel) userLabel.textContent = user.app_metadata.nombre || 'Central Chorrillos';
 
   suscribirNuevosIncidentes();
+  suscribirUnidadesOperativas();
+  await cargarUnidadesOperativas();
   await actualizarDatosDashboard();
 }
 
@@ -379,8 +427,11 @@ function actualizarMetricas(todosLosCasos) {
   const atendidos = todosLosCasos.filter(c => c.estado === 'atendido').length;
 
   // Unidades asignadas actualmente
-  const unidadesOcupadas = new Set(activos.filter(c => c.unidad_codigo).map(c => c.unidad_codigo));
-  const unidadesLibres = Math.max(0, UNIDADES_DISPONIBLES.length - unidadesOcupadas.size);
+  const unidadesOcupadas = new Set(activos.filter(c => ['asignado', 'en_camino'].includes(c.estado)).map(c => c.unidad_asignada || c.unidad_codigo).filter(Boolean));
+  const unidadesLibres = UNIDADES_DISPONIBLES.filter(unidad => {
+    const operativa = dashboardState.unidadesOperativas.get(unidad.codigo);
+    return !unidadesOcupadas.has(unidad.codigo) && (!operativa || operativa.estado_operativo === 'disponible');
+  }).length;
 
   const elAlta = document.getElementById('stat-prioridad-alta');
   const elActivos = document.getElementById('stat-total-activos');
@@ -496,7 +547,11 @@ window.abrirModalAsignacion = function(ticket) {
     .filter(incidente => !['atendido', 'cancelado'].includes(incidente.estado))
     .map(incidente => incidente.unidad_asignada || incidente.unidad_codigo)
     .filter(Boolean));
-  const unidadesLibres = UNIDADES_DISPONIBLES.filter(unidad => !unidadesOcupadas.has(unidad.id));
+  const unidadesLibres = UNIDADES_DISPONIBLES.filter(unidad => {
+    const operativa = dashboardState.unidadesOperativas.get(unidad.codigo);
+    return !unidadesOcupadas.has(unidad.id) &&
+      (!operativa || operativa.estado_operativo === 'disponible');
+  });
   if (unidadesLibres.length === 0) {
     dashboardState.incidenteSeleccionado = null;
     notify('No hay unidades disponibles para despachar.', 'error');
@@ -726,6 +781,8 @@ function cambiarVista(viewId) {
 
   if (viewId === 'mapa') {
     inicializarMapaTactico();
+  } else if (viewId === 'mapa-calor') {
+    inicializarMapaCalor();
   } else if (viewId === 'historial') {
     renderizarHistorial();
   } else if (viewId === 'unidades') {
@@ -774,6 +831,52 @@ function inicializarMapaTactico() {
   setTimeout(() => dashboardState.mapaDashboard.invalidateSize(), 200);
 }
 
+function inicializarMapaCalor() {
+  const container = document.getElementById('mapa-calor-dashboard');
+  if (!container) return;
+  if (!dashboardState.mapaCalor) {
+    dashboardState.mapaCalor = L.map('mapa-calor-dashboard').setView([-12.1611, -77.0210], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(dashboardState.mapaCalor);
+  }
+  if (dashboardState.heatLayer) dashboardState.heatLayer.remove();
+  const tipo = document.getElementById('heatmap-filtro-tipo')?.value || '';
+  const inicio = document.getElementById('heatmap-fecha-inicio')?.value;
+  const fin = document.getElementById('heatmap-fecha-fin')?.value;
+  const casos = obtenerCasos().filter(caso => {
+    if (tipo && caso.tipo !== tipo) return false;
+    const fecha = obtenerFechaIncidente(caso);
+    if (!fecha) return false;
+    if (inicio && fecha < new Date(`${inicio}T00:00:00`)) return false;
+    if (fin && fecha > new Date(`${fin}T23:59:59.999`)) return false;
+    const lat = Number(caso.ubicacion?.lat);
+    const lng = Number(caso.ubicacion?.lng);
+    return Number.isFinite(lat) && Number.isFinite(lng);
+  });
+  const puntos = casos.map(caso => [
+    Number(caso.ubicacion.lat),
+    Number(caso.ubicacion.lng),
+    ['violencia', 'auxilio'].includes(caso.tipo) ? 1.0 : 0.65
+  ]);
+  if (typeof L.heatLayer === 'function') {
+    dashboardState.heatLayer = L.heatLayer(puntos, {
+      radius: 32,
+      blur: 22,
+      maxZoom: 17,
+      gradient: { 0.25: '#facc15', 0.55: '#f97316', 0.85: '#dc2626', 1.0: '#991b1b' }
+    }).addTo(dashboardState.mapaCalor);
+  }
+  const conteos = { Norte: 0, Sur: 0, Centro: 0, Este: 0 };
+  casos.forEach(caso => conteos[obtenerSectorReferencial(caso)] = (conteos[obtenerSectorReferencial(caso)] || 0) + 1);
+  const ranking = document.getElementById('heatmap-ranking-zonas');
+  if (ranking) {
+    const maximo = Math.max(1, ...Object.values(conteos));
+    ranking.innerHTML = Object.entries(conteos).sort((a, b) => b[1] - a[1]).map(([zona, total]) => `
+      <div class="mb-3"><div class="d-flex justify-content-between small fw-bold"><span>${zona}</span><span>${total}</span></div><div class="progress" role="progressbar" aria-label="${zona}: ${total} incidentes" aria-valuemin="0" aria-valuemax="${maximo}" aria-valuenow="${total}"><div class="progress-bar bg-danger" style="width:${(total / maximo) * 100}%"></div></div></div>
+    `).join('') + `<div class="border-top pt-3 fw-bold">Total mapeado: ${casos.length}</div>`;
+  }
+  setTimeout(() => dashboardState.mapaCalor?.invalidateSize(), 200);
+}
+
 function obtenerHistorialFiltrado() {
   const buscar = (document.getElementById('historial-filtro-buscar')?.value || '').trim().toLowerCase();
   const tipo = document.getElementById('historial-filtro-tipo')?.value || '';
@@ -797,10 +900,15 @@ function renderizarHistorial() {
   const contador = document.getElementById('historial-contador');
   if (contador) contador.textContent = `Mostrando ${cerrados.length} de ${total} registros`;
   if (cerrados.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No hay incidentes que coincidan con los filtros.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No hay incidentes que coincidan con los filtros.</td></tr>';
     return;
   }
 
+  const confirmarBadge = c => {
+    if (c.confirmacion_ciudadano === 'confirmado') return '<span class="badge bg-success">Confirmado por ciudadano</span>';
+    if (c.confirmacion_ciudadano === 'no_atendido') return '<span class="badge bg-danger">⚠️ Ciudadano reporta NO atendido</span>';
+    return '<span class="badge bg-secondary">Sin confirmar</span>';
+  };
   tbody.innerHTML = cerrados.map(c => `
     <tr>
       <td><code>${escaparHTML(c.ticket)}</code></td>
@@ -809,6 +917,7 @@ function renderizarHistorial() {
       <td>${escaparHTML(c.unidad || '—')}</td>
       <td class="small text-muted">${c.atendido_at ? new Date(c.atendido_at).toLocaleString('es-PE') : 'Reciente'}</td>
       <td class="small">${escaparHTML(c.observaciones || 'Atendido satisfactoriamente')}</td>
+      <td>${c.estado === 'atendido' ? confirmarBadge(c) : '<span class="badge bg-secondary">No aplica</span>'}</td>
       <td><button type="button" class="btn btn-sm btn-outline-primary fw-semibold rounded-pill" data-action="ver-detalle-historial" data-ticket="${escaparHTML(c.ticket)}"><i class="bi bi-eye me-1" aria-hidden="true"></i> Ver más</button></td>
     </tr>`).join('');
 }
@@ -845,7 +954,14 @@ function exportarHistorialExcel() {
     'Unidad Asignada': limitarTextoCelda(caso.unidad || caso.unidad_codigo || caso.unidad_asignada),
     'Fecha de Registro': fechaLocal(caso.timestamp),
     'Fecha de Cierre': fechaLocal(caso.atendido_at),
-    'Observaciones de Campo': limitarTextoCelda(caso.observaciones)
+    'Observaciones de Campo': limitarTextoCelda(caso.observaciones),
+    'Confirmación Ciudadano': limitarTextoCelda(caso.confirmacion_ciudadano === 'confirmado'
+      ? 'Confirmado por ciudadano'
+      : caso.confirmacion_ciudadano === 'no_atendido'
+        ? 'Ciudadano reporta NO atendido'
+        : 'Sin confirmar'),
+    'Comentario Ciudadano': limitarTextoCelda(caso.confirmacion_comentario),
+    'Fecha Confirmación': fechaLocal(caso.confirmacion_at)
   }));
   const fechaArchivo = fechaLocalComoInput(new Date());
   const nombreBase = `Historial_Serenazgo_Chorrillos_${fechaArchivo}`;
@@ -884,7 +1000,14 @@ async function abrirModalDetalleHistorial(ticket) {
       ['DNI del ciudadano', caso.ciudadano_dni], ['Unidad asignada', caso.unidad || caso.unidad_codigo || caso.unidad_asignada],
       ['Fecha de registro', fecha(caso.timestamp)], ['Fecha de cierre', fecha(caso.atendido_at)],
       ['Ubicación', describirUbicacion(caso)], ['Referencia de ubicación', caso.referencia],
-      ['Nota de evidencia', caso.nota_evidencia], ['Observaciones de campo', caso.observaciones]
+      ['Nota de evidencia', caso.nota_evidencia], ['Observaciones de campo', caso.observaciones],
+      ['Confirmación Ciudadano', caso.confirmacion_ciudadano === 'confirmado'
+        ? 'Confirmado por ciudadano'
+        : caso.confirmacion_ciudadano === 'no_atendido'
+          ? '⚠️ Ciudadano reporta NO atendido'
+          : 'Sin confirmar'],
+      ['Comentario Ciudadano', caso.confirmacion_comentario],
+      ['Fecha de confirmación', fecha(caso.confirmacion_at)]
     ];
     datos.replaceChildren();
     campos.forEach(([etiqueta, valor]) => {
@@ -962,16 +1085,27 @@ function renderizarUnidadesGrid() {
 
   grid.innerHTML = UNIDADES_DISPONIBLES.map(u => {
     const estaOcupada = ocupadasMap.has(u.codigo);
+    const operativa = dashboardState.unidadesOperativas.get(u.codigo);
+    const estadoOperativo = operativa?.estado_operativo || 'disponible';
+    const manual = estadoOperativo === 'en_intervencion';
+    const noDisponible = estadoOperativo === 'no_disponible';
+    const badge = estaOcupada || manual
+      ? `<span class="badge bg-warning text-dark">En Intervención (Campo)</span>`
+      : noDisponible
+        ? `<span class="badge bg-danger">No Disponible</span>`
+        : `<span class="badge bg-success">Disponible</span>`;
+    const motivo = operativa?.motivo_estado ? `<small class="text-danger d-block mt-2">${escaparHTML(operativa.motivo_estado)}</small>` : '';
     return `
       <div class="col-12 col-md-6 col-xl-3">
         <div class="card-modern p-3 border-top border-4 ${estaOcupada ? 'border-warning' : 'border-success'}">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <span class="fw-bold">${u.codigo}</span>
-            <span class="badge ${estaOcupada ? 'bg-warning text-dark' : 'bg-success'}">${estaOcupada ? 'En Servicio' : 'Disponible'}</span>
+            ${badge}
           </div>
           <div class="h6 fw-bold mb-1">${u.nombre}</div>
           <small class="text-muted d-block">Sector: ${u.sector}</small>
           ${estaOcupada ? `<small class="text-primary fw-bold mt-2 d-block">Atendiendo: ${escaparHTML(ocupadasMap.get(u.codigo))}</small>` : ''}
+          ${motivo}
         </div>
       </div>`;
   }).join('');
@@ -1422,6 +1556,11 @@ document.addEventListener('DOMContentLoaded', () => {
     dashboardState.casos = [];
     dashboardState.pendingStatsRefresh = false;
     dashboardState.evidenciasPorTicket.clear();
+    if (dashboardState.unidadesRealtimeChannel) {
+      const canalUnidades = dashboardState.unidadesRealtimeChannel;
+      dashboardState.unidadesRealtimeChannel = null;
+      void supabaseClient?.removeChannel(canalUnidades);
+    }
     cerrarModal('modal-asignar');
     cerrarModal('modal-cierre');
     cerrarModal('modal-detalle-historial');
@@ -1505,6 +1644,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('modal-detalle-historial')?.addEventListener('keydown', event => {
     if (event.key === 'Escape') cerrarModal('modal-detalle-historial');
+  });
+  const hoy = new Date();
+  const haceTreinta = new Date(hoy);
+  haceTreinta.setDate(hoy.getDate() - 30);
+  const inicioHeat = document.getElementById('heatmap-fecha-inicio');
+  const finHeat = document.getElementById('heatmap-fecha-fin');
+  if (inicioHeat && !inicioHeat.value) inicioHeat.value = haceTreinta.toISOString().slice(0, 10);
+  if (finHeat && !finHeat.value) finHeat.value = hoy.toISOString().slice(0, 10);
+  ['heatmap-filtro-tipo', 'heatmap-fecha-inicio', 'heatmap-fecha-fin'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', inicializarMapaCalor);
   });
 
   // 6. Confirmación de Despacho y Cierre

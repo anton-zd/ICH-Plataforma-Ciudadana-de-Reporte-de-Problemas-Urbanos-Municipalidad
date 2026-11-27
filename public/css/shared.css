@@ -538,8 +538,43 @@ h1, h2, h3, h4, h5, h6 {
 
 .accessibility-font-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
+  gap: 0.55rem;
+}
+
+.accessibility-font-label {
+  text-align: center;
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.accessibility-range-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 32px;
+  align-items: center;
+  gap: 0.55rem;
+  color: #0F172A;
+  font-weight: 800;
+}
+
+.accessibility-a-large {
+  font-size: 1.45em;
+  text-align: right;
+}
+
+.accessibility-range-row input[type="range"] {
+  width: 100%;
+  height: 24px;
+  accent-color: #0A2540;
+  cursor: pointer;
+  background: linear-gradient(to right, #0A2540 0 var(--range-progress, 25%), #CBD5E1 var(--range-progress, 25%) 100%);
+  border-radius: 999px;
+  border: 0;
+}
+
+.tts-reading-highlight {
+  outline: 3px solid #FACC15 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px rgba(250, 204, 21, 0.28) !important;
 }
 
 .accessibility-panel button {

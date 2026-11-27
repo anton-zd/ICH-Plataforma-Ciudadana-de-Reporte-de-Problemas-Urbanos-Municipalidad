@@ -33,6 +33,8 @@ const serenoState = {
   refreshInFlight: false,
   posicionAgente: { lat: -12.1620, lng: -77.0225 }, // Posición base en Chorrillos
   lastLoadError: null,
+  unidadOperativa: null,
+  unidadRealtimeChannel: null,
 };
 
 const COLUMNAS_LIGERAS_INCIDENTES_SERENO = 'id, ticket, ciudadano_dni, tipo, prioridad, ubicacion, referencia, nota_evidencia, tiene_audio, tiene_audio_evidencia, tiene_foto, estado, unidad_asignada, unidad, unidad_codigo, eta_minutos, observaciones, timestamp, updated_at, atendido_at';
@@ -75,6 +77,74 @@ function vibrarAlerta(patron = [120, 60, 120]) {
   }
 }
 
+  async function cargarUnidadOperativa() {
+    if (!supabaseClient) return null;
+    const { data, error } = await supabaseClient
+      .from('unidades_operativas')
+      .select('codigo,nombre,sector,estado_operativo,motivo_estado,updated_at')
+      .eq('codigo', serenoState.agenteCodigo)
+      .maybeSingle();
+    if (error) throw error;
+    serenoState.unidadOperativa = data || null;
+    sincronizarUIEstadoSereno();
+    return data;
+  }
+
+  function sincronizarUIEstadoSereno() {
+    const select = document.getElementById('sereno-estado-select');
+    const boton = document.getElementById('btn-actualizar-estado-sereno');
+    const motivo = document.getElementById('sereno-motivo-estado');
+    const nota = document.getElementById('sereno-estado-nota');
+    const indicador = document.getElementById('sereno-estado-texto');
+    const dot = document.getElementById('estado-dot');
+    const activo = ['asignado', 'en_camino'].includes(serenoState.incidenteActual?.estado);
+    const estado = activo ? 'en_intervencion' : (serenoState.unidadOperativa?.estado_operativo || 'disponible');
+
+    if (estado === 'en_intervencion') {
+      if (indicador) indicador.textContent = 'En Intervención';
+      if (dot) dot.className = 'status-dot-field ocupado';
+    } else if (estado === 'no_disponible') {
+      if (indicador) indicador.textContent = 'No Disponible';
+      if (dot) dot.className = 'status-dot-field no-disponible';
+    } else {
+      if (indicador) indicador.textContent = 'Disponible';
+      if (dot) dot.className = 'status-dot-field';
+    }
+    if (select) {
+      select.value = estado;
+      select.disabled = activo;
+    }
+    if (motivo) motivo.disabled = activo;
+    if (boton) boton.disabled = activo;
+    if (nota) nota.textContent = activo
+      ? 'Estado controlado por despacho activo; cierra el caso para cambiar tu disponibilidad.'
+      : (serenoState.unidadOperativa?.motivo_estado || '');
+  }
+
+  async function actualizarEstadoOperativoSereno() {
+    const select = document.getElementById('sereno-estado-select');
+    const motivo = document.getElementById('sereno-motivo-estado');
+    if (!select || ['asignado', 'en_camino'].includes(serenoState.incidenteActual?.estado)) return;
+    const estadoOperativo = select.value;
+    const updatedAt = new Date().toISOString();
+    const motivoEstado = motivo?.value.trim() || '';
+    try {
+      const { data, error } = await supabaseClient
+        .from('unidades_operativas')
+        .update({ estado_operativo: estadoOperativo, motivo_estado: motivoEstado, updated_at: updatedAt })
+        .eq('codigo', serenoState.agenteCodigo)
+        .select('codigo,nombre,sector,estado_operativo,motivo_estado,updated_at')
+        .maybeSingle();
+      if (error) throw error;
+      serenoState.unidadOperativa = data || { ...serenoState.unidadOperativa, estado_operativo: estadoOperativo, motivo_estado: motivoEstado, updated_at: updatedAt };
+      sincronizarUIEstadoSereno();
+      mostrarToast('Estado operativo actualizado.', 'success');
+    } catch (error) {
+      console.error('No se pudo actualizar el estado operativo:', error);
+      mostrarToast(error.message || 'No se pudo actualizar el estado operativo.', 'error');
+    }
+  }
+
 // ─── Monitoreo Realtime de asignaciones ──────────────────────────────────────
 
 async function verificarAsignacionesAgente() {
@@ -87,6 +157,7 @@ async function verificarAsignacionesAgente() {
   const sesionVersion = serenoState.sesionVersion;
 
   try {
+    await cargarUnidadOperativa();
     const { data: miCaso, error } = await supabaseClient
       .from('incidentes')
       .select(COLUMNAS_LIGERAS_INCIDENTES_SERENO)
@@ -161,6 +232,7 @@ function aplicarAsignacionAgente(caso) {
   };
   renderizarEmergenciaAsignada(serenoState.incidenteActual);
   renderizarSectorList([serenoState.incidenteActual]);
+  sincronizarUIEstadoSereno();
 
   if (esNuevaAsignacion) {
     renderizarEvidenciasAsignacion(serenoState.incidenteActual);
@@ -185,6 +257,23 @@ function aplicarCambioIncidenteRealtime(payload) {
     renderizarSinAsignacion();
     renderizarSectorList([]);
   }
+}
+
+function suscribirUnidadOperativaRealtime() {
+  if (!supabaseClient || !serenoState.userId) return;
+  if (serenoState.unidadRealtimeChannel) return;
+  serenoState.unidadRealtimeChannel = supabaseClient
+    .channel(`sereno-unidad-${serenoState.agenteCodigo}`)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'unidades_operativas',
+      filter: `codigo=eq.${serenoState.agenteCodigo}`
+    }, payload => {
+      serenoState.unidadOperativa = payload.new || serenoState.unidadOperativa;
+      sincronizarUIEstadoSereno();
+    })
+    .subscribe();
 }
 
 function actualizarEstadoRealtime(texto, activo) {
@@ -364,6 +453,7 @@ function renderizarSinAsignacion() {
 
   // Centrar mapa en la posición del patrullero
   actualizarMapaSerenazgo(null, null, null);
+  sincronizarUIEstadoSereno();
 }
 
 // ─── Mapa Leaflet Táctico de Serenazgo ────────────────────────────────────────
@@ -619,6 +709,10 @@ async function cerrarSesionSereno() {
           if (estado !== 'ok') console.warn('No se pudo cerrar el canal Realtime del sereno:', estado);
         }).catch(error => console.error('Error al cerrar el canal Realtime del sereno:', error));
       }
+      if (serenoState.unidadRealtimeChannel) {
+        void supabaseClient.removeChannel(serenoState.unidadRealtimeChannel);
+        serenoState.unidadRealtimeChannel = null;
+      }
       serenoState.incidenteActual = null;
       serenoState.incidenteActivoTicket = null;
       serenoState.userId = null;
@@ -665,13 +759,16 @@ async function activarSesionSereno(user) {
   document.getElementById('sereno-bottom-nav')?.classList.remove('hidden');
   cambiarPantallaSereno('screen-asignacion');
   actualizarMapaSerenazgo(null, null, null);
+  await cargarUnidadOperativa();
   suscribirAsignacionesRealtime();
+  suscribirUnidadOperativaRealtime();
   await verificarAsignacionesAgente();
 }
 
 // ─── Inicialización y Login de Serenazgo ────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-actualizar-estado-sereno')?.addEventListener('click', actualizarEstadoOperativoSereno);
 
   // 1. Inicio de sesión de Agente con Supabase Auth
   const formLogin = document.getElementById('form-login-sereno');

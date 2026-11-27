@@ -678,9 +678,8 @@
     <div class="accessibility-panel" role="group" aria-label="Preferencias de accesibilidad">
       <h2>Accesibilidad</h2>
       <div class="accessibility-font-controls" role="group" aria-label="Tamaño del texto">
-        <button type="button" data-font-size="normal" aria-pressed="true">A- <span>Normal 100%</span></button>
-        <button type="button" data-font-size="large" aria-pressed="false">A+ <span>Grande 115%</span></button>
-        <button type="button" data-font-size="extra-large" aria-pressed="false">A++ <span>Extra grande 130%</span></button>
+        <div class="accessibility-font-label" id="accessibility-font-label">Tamaño de texto: Normal (100%)</div>
+        <div class="accessibility-range-row"><span aria-hidden="true">A</span><input type="range" min="1" max="5" step="1" value="2" id="accessibility-font-range" aria-labelledby="accessibility-font-label"><span class="accessibility-a-large" aria-hidden="true">A</span></div>
       </div>
       <button type="button" data-accessibility-toggle="highContrast" aria-pressed="false">Alto Contraste</button>
       <button type="button" data-accessibility-toggle="voiceGuide" aria-pressed="false">Lectura por Voz (Guía Auditiva)</button>
